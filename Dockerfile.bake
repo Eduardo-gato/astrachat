@@ -1,0 +1,11 @@
+# AstraChat bake — patches enterprise assados na imagem (Swarm-safe).
+# Build: docker build -f Dockerfile.bake -t <seu-registry>/astrachat:enterprise .
+# Base: mesma imagem que o serviço usa hoje (Portainer > Services > astrachat_astrachat > Image).
+FROM astraonline/astrachat:latest
+
+# Override via prepend (tem precedência sobre o wrapper Kanban::License):
+# força pricing_plan=enterprise + quantity=9999999
+COPY patches/chatwoot_hub.rb /app/enterprise/lib/enterprise/chatwoot_hub.rb
+# Impede o hub/reconciliador de reverter o plano
+COPY patches/check_new_versions_job.rb /app/enterprise/app/jobs/enterprise/internal/check_new_versions_job.rb
+COPY patches/reconcile_plan_config_service.rb /app/enterprise/app/services/internal/reconcile_plan_config_service.rb
