@@ -153,6 +153,50 @@ rescue => e
   puts ""
 end
 
+# Override enterprise (passa por cima do wrapper Kanban::License via prepend).
+# Sem isso o pricing_plan continua 'community' mesmo com DB=enterprise,
+# pois force_enterprise_plan.rb define: active? ? enterprise : community.
+begin
+  ent_hub = File.join(Rails.root, 'enterprise', 'lib', 'enterprise', 'chatwoot_hub.rb')
+
+  enterprise_patch = <<-RUBY
+module Enterprise::ChatwootHub
+  ENTERPRISE_BASE_URL = 'https://hub.2.chatwoot.com'.freeze
+
+  def base_url
+    return ENV.fetch('CHATWOOT_HUB_URL', ENTERPRISE_BASE_URL) if Rails.env.development?
+
+    ENTERPRISE_BASE_URL
+  end
+
+  # AstraChat live patch: força enterprise (bypassa Kanban::License.active?)
+  def pricing_plan
+    'enterprise'
+  end
+
+  def pricing_plan_quantity
+    9_999_999
+  end
+end
+  RUBY
+
+  if File.exist?(ent_hub)
+    backup_ent = "#{ent_hub}.backup.#{Time.now.strftime('%Y%m%d_%H%M%S')}"
+    FileUtils.cp(ent_hub, backup_ent)
+    puts "💾 Backup enterprise: #{backup_ent}"
+    File.write(ent_hub, enterprise_patch)
+    puts "✅ Override enterprise aplicado em #{ent_hub}"
+    puts "🔄 Reinicie o container: o prepend só vale após o boot"
+  else
+    puts "ℹ️  Override enterprise pulado (sem pasta enterprise/)"
+  end
+  puts ""
+
+rescue => e
+  puts "⚠️  Erro no override enterprise: #{e.message}"
+  puts ""
+end
+
 # Verifica configurações finais
 begin
   puts "🔍 Verificando configurações aplicadas:"
@@ -178,6 +222,29 @@ begin
     puts "   • Trigger PostgreSQL: ⚠️  Não detectado"
   end
 
+  # Status do wrapper (só vale após restart: prepend é carregado no boot)
+  begin
+    loc = ChatwootHub.method(:pricing_plan).source_location.inspect
+    puts "   • pricing_plan em: #{loc}"
+  rescue => e
+    puts "   • pricing_plan em: ? (#{e.message})"
+  end
+
+  begin
+    if ChatwootHub.respond_to?(:pricing_plan_without_license)
+      puts "   • base (without_license): #{ChatwootHub.pricing_plan_without_license.inspect}"
+    end
+    puts "   • atual (neste processo, pré-restart): #{ChatwootHub.pricing_plan.inspect}"
+  rescue => e
+    puts "   • pricing atual: ? (#{e.message})"
+  end
+
+  begin
+    puts "   • Kanban::License.active?: #{Kanban::License.active?.inspect}"
+  rescue
+    puts "   • Kanban::License: ausente"
+  end
+
 rescue => e
   puts "⚠️  Erro ao verificar: #{e.message}"
 end
@@ -189,7 +256,9 @@ puts "🔒 PROTEÇÃO ATIVA:"
 puts "   • Trigger PostgreSQL monitora e força valores enterprise"
 puts "   • Qualquer tentativa de alterar será revertida automaticamente"
 puts "   • Configurações marcadas como 'locked'"
+puts "   • Override enterprise (prepend) força enterprise após o restart"
 puts ""
 puts "🔄 Reinicie o container para aplicar todas as mudanças"
+puts "   Depois: DISABLE_SPRING=1 bundle exec rails runner \"puts ChatwootHub.pricing_plan\""
 puts "🌟 chatwoot-unlock - Educational Project"
 puts ""
