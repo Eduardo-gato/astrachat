@@ -1,0 +1,100 @@
+name: dchat-test
+
+services:
+  postgres-dchat:
+    image: pgvector/pgvector:pg16
+    container_name: dchat-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chatwoot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - dchat-test-postgres-data:/var/lib/postgresql/data
+
+  redis-dchat:
+    image: redis:7-alpine
+    container_name: dchat-redis
+    restart: unless-stopped
+    ports:
+      - "6381:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - dchat-test-redis-data:/data
+
+  chatwoot-dchat:
+    image: chatwoot/chatwoot:latest
+    container_name: dchat-app
+    restart: unless-stopped
+    depends_on:
+      postgres-dchat:
+        condition: service_healthy
+      redis-dchat:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres-dchat
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: chatwoot
+      REDIS_URL: redis://redis-dchat:6379
+      REDIS_HOST: redis-dchat
+      REDIS_PORT: 6379
+      RAILS_ENV: production
+      NODE_ENV: production
+      INSTALLATION_ENV: docker
+      SECRET_KEY_BASE: dchat_test_secret_key_base_12345678901234567890
+      ENABLE_ACCOUNT_SIGNUP: "false"
+    command: >
+      sh -c "
+        DISABLE_DATABASE_ENVIRONMENT_CHECK=1 bundle exec rails db:chatwoot_prepare &&
+        bundle exec rails s -b 0.0.0.0
+      "
+    ports:
+      - "3006:3000"
+    volumes:
+      - dchat-test-public-data:/app/public
+      - ~/projetos/Dchat:/dchat:ro
+
+  sidekiq-dchat:
+    image: chatwoot/chatwoot:latest
+    container_name: dchat-sidekiq
+    restart: unless-stopped
+    depends_on:
+      postgres-dchat:
+        condition: service_healthy
+      redis-dchat:
+        condition: service_healthy
+      chatwoot-dchat:
+        condition: service_started
+    environment:
+      POSTGRES_HOST: postgres-dchat
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DATABASE: chatwoot
+      REDIS_URL: redis://redis-dchat:6379
+      REDIS_HOST: redis-dchat
+      REDIS_PORT: 6379
+      RAILS_ENV: production
+      NODE_ENV: production
+      INSTALLATION_ENV: docker
+      SECRET_KEY_BASE: dchat_test_secret_key_base_12345678901234567890
+    command: bundle exec sidekiq -C config/sidekiq.yml
+    volumes:
+      - dchat-test-public-data:/app/public
+      - ~/projetos/Dchat:/dchat:ro
+
+volumes:
+  dchat-test-postgres-data:
+  dchat-test-redis-data:
+  dchat-test-public-data:
