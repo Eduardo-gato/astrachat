@@ -197,6 +197,44 @@ rescue => e
   puts ""
 end
 
+# Habilita TODAS as features "All features" (EE) em todas as contas.
+# Essas flags ficam nos bit flags do Account (Featurable/FlagShihTzu), não no
+# InstallationConfig. No Super Admin os checkboxes vêm com disabled="disabled"
+# (gate de licença), então só dá para ligar via model.
+begin
+  puts "✨ Habilitando features enterprise (All features) nas contas..."
+
+  ee_features = %w[
+    advanced_assignment advanced_search audit_logs csat_review_notes
+    captain_integration captain_document_auto_sync captain_integration_v2
+    companies custom_roles custom_tools disable_branding
+    conversation_required_attributes saml sla channel_voice
+  ]
+
+  Account.find_each do |account|
+    applied = []
+    ee_features.each do |name|
+      setter = "feature_#{name}="
+      next unless account.respond_to?(setter)
+
+      account.public_send(setter, true)
+      applied << name
+    end
+
+    next if applied.empty?
+
+    account.save!
+    puts "   • Conta #{account.id} (#{account.name}): #{applied.size} features habilitadas"
+  end
+
+  puts "✅ Features enterprise aplicadas"
+  puts ""
+
+rescue => e
+  puts "⚠️  Erro ao habilitar features enterprise: #{e.message}"
+  puts ""
+end
+
 # Verifica configurações finais
 begin
   puts "🔍 Verificando configurações aplicadas:"
@@ -245,6 +283,17 @@ begin
     puts "   • Kanban::License: ausente"
   end
 
+  begin
+    Account.find_each do |account|
+      enabled = %w[advanced_assignment audit_logs companies custom_roles saml sla channel_voice].select do |name|
+        account.respond_to?("feature_#{name}?") && account.public_send("feature_#{name}?")
+      end
+      puts "   • Conta #{account.id} features EE ativas: #{enabled.size}/#{%w[advanced_assignment audit_logs companies custom_roles saml sla channel_voice].size} (#{enabled.join(', ')})"
+    end
+  rescue => e
+    puts "   • Features EE: ? (#{e.message})"
+  end
+
 rescue => e
   puts "⚠️  Erro ao verificar: #{e.message}"
 end
@@ -257,6 +306,7 @@ puts "   • Trigger PostgreSQL monitora e força valores enterprise"
 puts "   • Qualquer tentativa de alterar será revertida automaticamente"
 puts "   • Configurações marcadas como 'locked'"
 puts "   • Override enterprise (prepend) força enterprise após o restart"
+puts "   • All features (EE) habilitadas em todas as contas"
 puts ""
 puts "🔄 Reinicie o container para aplicar todas as mudanças"
 puts "   Depois: DISABLE_SPRING=1 bundle exec rails runner \"puts ChatwootHub.pricing_plan\""
