@@ -30,6 +30,22 @@ curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/docker-un
 
 **📖 [Guia Completo Docker/Portainer](DOCKER.md)** - Inclui troubleshooting, métodos alternativos e instruções via Portainer Web UI
 
+### 🧙 Assistente interativo (`apply-enterprise.sh`)
+
+Para aplicar a imagem "enterprise" no Swarm de forma guiada (pergunta arquitetura, imagem, serviço, etc.):
+
+```bash
+wget -qO apply-enterprise.sh https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh
+bash apply-enterprise.sh
+```
+
+O assistente pergunta passo a passo (**amd64 / arm64 / both**), monta a imagem com
+`buildx`, dá push, atualiza o serviço e — opcionalmente — roda o `unlock_permanent.rb`
+dentro do container. Também oferece rollback.
+
+> Rode num **manager do Swarm** com `docker` + `buildx`. Não use pipe (`curl | bash`)
+> em script interativo — baixe e execute.
+
 ### 🧩 Com o widget de chamadas (AstraCalls)
 
 O widget é servido pelo **seu** servidor AstraCalls (não pelo Chatwoot). Defina a

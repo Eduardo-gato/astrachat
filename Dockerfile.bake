@@ -1,7 +1,9 @@
 # AstraChat bake — patches enterprise assados na imagem (Swarm-safe).
 # Build: docker build -f Dockerfile.bake -t <seu-registry>/astrachat:enterprise .
 # Base: mesma imagem que o serviço usa hoje (Portainer > Services > astrachat_astrachat > Image).
-FROM astraonline/astrachat:latest
+# Pode ser sobrescrita no build: --build-arg BASE_IMAGE=...
+ARG BASE_IMAGE=astraonline/astrachat:latest
+FROM ${BASE_IMAGE}
 
 # Override via prepend (tem precedência sobre o wrapper Kanban::License):
 # força pricing_plan=enterprise + quantity=9999999
