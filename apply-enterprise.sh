@@ -226,23 +226,8 @@ else
   echo
 fi
 
-# --- 6. login no registry ----------------------------------------------------
-title "6) Login no registry"
-REG_HOST="${TARGET_IMAGE%%/*}"
-if printf '%s' "$REG_HOST" | grep -q '[.:]'; then
-  REG_HOST="${REG_HOST%%:*}"
-else
-  REG_HOST="docker.io"
-fi
-info "Registry detectado: $REG_HOST"
-if confirm "Fazer 'docker login' agora (se o push der 'denied')?"; then
-  ask REG_USER "Usuário do registry" ""
-  docker login "$REG_HOST" -u "$REG_USER" || warn "Login falhou (siga e tente o push)."
-fi
-echo
-
-# --- 7. serviço --------------------------------------------------------------
-title "7) Serviço do Swarm"
+# --- 6. serviço --------------------------------------------------------------
+title "6) Serviço do Swarm"
 if [ "$SWARM_STATE" = "active" ]; then
   DETECTED="$(docker service ls --format '{{.Name}}' 2>/dev/null | grep -iE 'astrachat|chatwoot' | head -n1 || true)"
   ask SERVICE "Nome do serviço" "${DETECTED:-astrachat_astrachat}"
@@ -251,8 +236,8 @@ else
 fi
 echo
 
-# --- 8. ação ----------------------------------------------------------------
-title "8) O que fazer?"
+# --- 7. ação ----------------------------------------------------------------
+title "7) O que fazer?"
 dim "  tudo     = build + push + atualizar serviço + verificar"
 dim "  build    = só build + push"
 dim "  update   = só atualizar o serviço com a imagem existente"
@@ -260,6 +245,33 @@ dim "  rollback = reverter o serviço para a revisão anterior"
 dim ""
 ask_choice ACTION "Ação" "tudo|build|update|rollback" "tudo"
 echo
+
+# --- 8. login no registry ----------------------------------------------------
+if [ "$ACTION" = "update" ] || [ "$ACTION" = "rollback" ]; then
+  title "8) Login no registry (pulado)"
+  dim "Você escolheu '$ACTION' — não haverá push, então não precisa de login."
+  dim "Os nós só baixam (pull); se a imagem é pública, baixam sem autenticação."
+  echo
+else
+  title "8) Login no registry (necessário para PUSH)"
+  REG_HOST="${TARGET_IMAGE%%/*}"
+  if printf '%s' "$REG_HOST" | grep -q '[.:]'; then
+    REG_HOST="${REG_HOST%%:*}"
+  else
+    REG_HOST="docker.io"
+  fi
+  dim "Atenção: ser 'pública' só dispensa senha para BAIXAR (pull)."
+  dim "Enviar (push) SEMPRE exige login — só o dono publica na tag."
+  dim "Registry detectado: $REG_HOST"
+  if confirm "Fazer 'docker login' agora?"; then
+    ask REG_USER "Usuário do registry" ""
+    docker login "$REG_HOST" -u "$REG_USER" || warn "Login falhou (siga e tente o push)."
+  else
+    dim "OK — se você já logou antes, o push usa as credenciais salvas."
+    dim "Se não, o push pode falhar com 'denied'."
+  fi
+  echo
+fi
 
 # --- 9. unlock (rails runner) -----------------------------------------------
 RUN_UNLOCK=0
