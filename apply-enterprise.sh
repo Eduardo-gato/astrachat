@@ -165,34 +165,64 @@ case "$ARCH" in
   arm64)   PLATFORMS="linux/arm64" ;;
 esac
 
-HOST_ARCH="$(docker info --format '{{.Architecture}}' 2>/dev/null || echo unknown)"
-info "Arquitetura deste host: $HOST_ARCH"
-if [ "$ARCH" = "both" ] || { [ "$ARCH" != "both" ] && [ "$HOST_ARCH" != "$ARCH" ]; }; then
-  warn "Vai ser necessário cross-build (QEMU) para: $PLATFORMS"
+# normaliza a arquitetura do host (docker reporta x86_64/aarch64)
+HOST_ARCH_RAW="$(docker info --format '{{.Architecture}}' 2>/dev/null || echo unknown)"
+case "$HOST_ARCH_RAW" in
+  x86_64|amd64)      HOST_ARCH="amd64" ;;
+  aarch64|arm64*)    HOST_ARCH="arm64" ;;
+  *)                 HOST_ARCH="$HOST_ARCH_RAW" ;;
+esac
+info "Arquitetura deste host: $HOST_ARCH (detectada como '$HOST_ARCH_RAW')"
+
+# cross-build só é necessário se pediu multi-arch OU uma arch diferente do host
+if [ "$ARCH" = "both" ]; then
   CROSS=1
+  CROSS_WHY="multi-arch (você pediu amd64 + arm64)"
+elif [ "$HOST_ARCH" != "$ARCH" ]; then
+  CROSS=1
+  CROSS_WHY="você pediu $ARCH, mas o host é $HOST_ARCH"
 else
   CROSS=0
+  CROSS_WHY="a arquitetura pedida é a do host ($HOST_ARCH)"
+fi
+
+if [ "$CROSS" = "1" ]; then
+  warn "Cross-build NECESSÁRIO: $CROSS_WHY."
+  dim "Isso significa gerar imagem para uma arquitetura diferente da deste host — o BuildKit usa QEMU."
+else
+  ok "Sem cross-build: $CROSS_WHY. (não precisa de QEMU)"
 fi
 echo
 
 # --- 5. buildx ---------------------------------------------------------------
 BUILDER="multiarch"
-title "5) Builder (buildx)"
+title "5) Builder (buildx) — o que é e por que"
+dim "O buildx é o construtor de imagens do Docker. Para gerar imagens de OUTRA"
+dim "arquitetura (ou multi-arch) é preciso um builder dedicado (driver"
+dim "docker-container), que roda um BuildKit isolado com suporte a multiplataforma."
 docker buildx version >/dev/null 2>&1 || die "buildx não disponível (atualize o Docker ou instale o plugin buildx)."
-info "Criando/usando builder '$BUILDER' (driver docker-container; necessário p/ multi-arch)..."
+info "Criando/usando o builder '$BUILDER'..."
 docker buildx create --name "$BUILDER" --driver docker-container >/dev/null 2>&1 || true
 docker buildx use "$BUILDER"
 docker buildx inspect --bootstrap >/dev/null 2>&1 || warn "Falha ao inicializar o builder (siga mesmo assim)."
-ok "Builder '$BUILDER' pronto."
+ok "Builder '$BUILDER' pronto e selecionado."
 echo
 
 if [ "$CROSS" = "1" ]; then
-  title "5b) Emulação QEMU (cross-build)"
-  dim "Registra binfmt para rodar binários de outra arquitetura."
-  if confirm "Instalar/atualizar QEMU (tonistiigi/binfmt)?"; then
+  title "5b) QEMU (emulação para cross-build)"
+  dim "Como o host é $HOST_ARCH e você quer gerar para: $PLATFORMS"
+  dim "o BuildKit precisa do QEMU (binfmt_misc) para 'rodar' binários da outra"
+  dim "arquitetura durante o build. Sem isso, a plataforma diferente falha."
+  dim "É seguro: apenas registra emuladores (não altera a imagem nem o host)."
+  if confirm "Instalar/atualizar o QEMU (tonistiigi/binfmt)?"; then
     docker run --privileged --rm tonistiigi/binfmt --install amd64,arm64 || warn "Falha no binfmt; cross-build pode não funcionar."
-    ok "QEMU ok."
+    ok "QEMU registrado."
+  else
+    warn "QEMU não instalado — o build de $ARCH fora do host pode falhar."
   fi
+  echo
+else
+  dim "(5b pulado: nenhuma arquitetura diferente do host foi pedida)"
   echo
 fi
 
