@@ -27,13 +27,33 @@ title() { printf "\n${C_BOLD}== %s ==${C_RESET}\n" "$*"; }
 die() { err "$*"; exit 1; }
 
 # --- helpers de prompt -------------------------------------------------------
+# A qualquer momento, digitar sair/exit/quit/q encerra o assistente.
+bye() {
+  printf "\n${C_YELLOW}Saindo do assistente. Até logo!${C_RESET}\n"
+  exit 0
+}
+
+is_exit() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    sair|exit|quit|q) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+read_line() { # read_line VAR "prompt"
+  local __var="$1" __prompt="$2" __val=""
+  read -r -p "$__prompt" __val || bye
+  if is_exit "$__val"; then bye; fi
+  printf -v "$__var" '%s' "$__val"
+}
+
 ask() { # ask VAR "pergunta" "default"
   local __var="$1" __q="$2" __def="${3:-}" __ans=""
   if [ -n "$__def" ]; then
-    read -r -p "$__q [$__def]: " __ans || true
+    read_line __ans "$__q [$__def]: "
     __ans="${__ans:-$__def}"
   else
-    read -r -p "$__q: " __ans || true
+    read_line __ans "$__q: "
   fi
   printf -v "$__var" '%s' "$__ans"
 }
@@ -48,7 +68,7 @@ ask_choice() { # ask_choice VAR "pergunta" "a|b|c" "default"
     if [ "$__o" = "$__def" ]; then __defnum="$__i"; fi
   done
   while :; do
-    read -r -p "$__q [${__defnum:-$__def}]: " __ans || true
+    read_line __ans "$__q [${__defnum:-$__def}]: "
     __ans="${__ans:-${__defnum:-$__def}}"
     if [ "$__ans" -eq "$__ans" ] 2>/dev/null; then
       __i=0
@@ -67,21 +87,35 @@ ask_choice() { # ask_choice VAR "pergunta" "a|b|c" "default"
 ask_secret() { # como ask, mas mostra só os últimos 4 chars do default
   local __var="$1" __q="$2" __def="${3:-}" __ans=""
   if [ -n "$__def" ]; then
-    read -r -p "$__q [detectada: ****${__def: -4}]: " __ans || true
+    read_line __ans "$__q [detectada: ****${__def: -4}]: "
     __ans="${__ans:-$__def}"
   else
-    read -r -p "$__q: " __ans || true
+    read_line __ans "$__q: "
   fi
   printf -v "$__var" '%s' "$__ans"
 }
 
 confirm() { # confirm "pergunta" -> 0 sim / 1 não
   local __ans=""
-  read -r -p "$1 [Y/n]: " __ans || true
+  read_line __ans "$1 [Y/n]: "
   case "${__ans:-Y}" in y|Y|yes|YES|s|S) return 0;; *) return 1;; esac
 }
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Comando '$1' não encontrado. $2"; }
+
+blink_hint() { # blink_hint "texto" [vezes]
+  local __msg="$1" __n="${2:-3}" __i __len
+  __len=${#__msg}
+  for ((__i = 0; __i < __n; __i++)); do
+    printf "\r${C_YELLOW}${C_BOLD}%s${C_RESET}" "$__msg"
+    sleep 0.45 2>/dev/null || sleep 1
+    printf "\r%*s\r" "$__len" ""
+    sleep 0.3 2>/dev/null || sleep 1
+  done
+  printf "${C_YELLOW}${C_BOLD}%s${C_RESET}\n" "$__msg"
+}
+
+trap 'printf "\n"; bye' INT
 
 # --- 0. boas-vindas ----------------------------------------------------------
 clear 2>/dev/null || true
@@ -99,6 +133,8 @@ dim "Este assistente vai: montar a imagem bakeda (multi/single-arch) e atualizar
 dim "Cada passo mostra um default entre [ ]. Aperte ENTER para aceitar."
 echo
 warn "Testado na versão do AstraChat: v4.17.1-0.0.2"
+echo
+blink_hint "Para sair do assistente a qualquer momento, digite: sair  (ou exit / q)" 3
 echo
 
 # --- 1. checagens de ambiente ------------------------------------------------
