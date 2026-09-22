@@ -5,9 +5,13 @@
 #
 # Requisitos: rodar num MANAGER do Swarm com docker + buildx.
 #
-# Uso (baixe e execute, NÃO use pipe em script interativo):
-#   wget -qO apply-enterprise.sh https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh
-#   bash apply-enterprise.sh
+# Uso (baixa E já executa, mantendo o terminal livre para as perguntas):
+#   wget -qO /tmp/apply-enterprise.sh https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh && bash /tmp/apply-enterprise.sh
+#
+# Ou, em bash (sem arquivo temporário):
+#   bash <(wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
+#
+# Obs: NÃO use "wget -qO- URL | bash" — o pipe consome o stdin e as perguntas travam.
 #
 set -euo pipefail
 
