@@ -241,13 +241,14 @@ end
 # DASHBOARD_SCRIPTS é uma InstallationConfig "locked" e o App Config > internal
 # só aparece em plano enterprise — então gravamos direto no model.
 # Configure nas variáveis do serviço:
-#   ASTRACALLS_WIDGET_SRC=https://call.toky.top/widget.js
-#   ASTRACALLS_WIDGET_KEY=<WACALLS_WIDGET_KEY>
+#   ASTRACALLS_WIDGET_SRC=https://seudominio.com.br/widget.js
+#   ASTRACALLS_WIDGET_KEY=<WACALLS_WIDGET_KEY>   (recomendado)
+#   ASTRACALLS_API_KEY=<WACALLS_API_KEY>         (alternativa, chave-mestra)
 begin
   puts "🧩 Configurando DASHBOARD_SCRIPTS (widget AstraCalls)..."
 
   widget_src = ENV['ASTRACALLS_WIDGET_SRC']
-  widget_key = ENV['ASTRACALLS_WIDGET_KEY']
+  widget_key = ENV['ASTRACALLS_WIDGET_KEY'].presence || ENV['ASTRACALLS_API_KEY']
 
   if widget_src.present? && widget_key.present?
     script = %(<script src="#{widget_src}" data-api-key="#{widget_key}"></script>)
@@ -261,7 +262,7 @@ begin
     puts "   • Widget AstraCalls injetado no dashboard (#{widget_src})"
     puts "✅ DASHBOARD_SCRIPTS aplicado"
   else
-    puts "ℹ️  Defina ASTRACALLS_WIDGET_SRC e ASTRACALLS_WIDGET_KEY — DASHBOARD_SCRIPTS não alterado"
+    puts "ℹ️  Defina ASTRACALLS_WIDGET_SRC e ASTRACALLS_WIDGET_KEY (ou ASTRACALLS_API_KEY) — DASHBOARD_SCRIPTS não alterado"
   end
   puts ""
 

@@ -32,13 +32,29 @@ curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/docker-un
 
 ### 🧩 Com o widget de chamadas (AstraCalls)
 
-Defina as variáveis **antes** de rodar para injetar o botão de telefone no dashboard (via `DASHBOARD_SCRIPTS`):
+O widget é servido pelo **seu** servidor AstraCalls (não pelo Chatwoot). Defina a
+URL e a chave **antes** de rodar para injetar o botão de telefone no dashboard
+(via `DASHBOARD_SCRIPTS`):
 
 ```bash
-export ASTRACALLS_WIDGET_SRC=https://call.toky.top/widget.js
+export ASTRACALLS_WIDGET_SRC=https://seudominio.com.br/widget.js
+
+# Recomendado: chave de widget (WACALLS_WIDGET_KEY) — escopo limitado
 export ASTRACALLS_WIDGET_KEY=sua_widget_key
+
+# Alternativa: chave-mestra (WACALLS_API_KEY) — acesso total, evite expor
+# export ASTRACALLS_API_KEY=sua_api_key
+
 wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb | bundle exec rails runner -
 ```
+
+> **Sobre a chave (AstraCalls):**
+> - `WACALLS_WIDGET_KEY` → chave de **widget** (recomendada): só resolve contato,
+>   recebe eventos e opera chamadas. É a que fica visível no DOM/rede.
+> - `WACALLS_API_KEY` → chave-**mestra**: acesso total (lista/apaga sessões, envia
+>   mensagens). Use só se a de widget não estiver configurada.
+>
+> O script aceita `ASTRACALLS_WIDGET_KEY` **ou** `ASTRACALLS_API_KEY`.
 
 **Vantagens:**
 - ✅ Configurações **permanentes** que não resetam
@@ -156,7 +172,7 @@ docker restart <NOME_DO_CONTAINER>
 Com o widget AstraCalls, passe as variáveis:
 
 ```bash
-docker exec -it <NOME_DO_CONTAINER> bash -c "export ASTRACALLS_WIDGET_SRC=https://call.toky.top/widget.js ASTRACALLS_WIDGET_KEY=sua_widget_key && wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb | bundle exec rails runner -"
+docker exec -it <NOME_DO_CONTAINER> bash -c "export ASTRACALLS_WIDGET_SRC=https://seudominio.com.br/widget.js ASTRACALLS_WIDGET_KEY=sua_widget_key && wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb | bundle exec rails runner -"
 ```
 
 ### Método 3: Via Portainer Web UI
