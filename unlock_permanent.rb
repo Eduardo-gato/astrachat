@@ -235,6 +235,41 @@ rescue => e
   puts ""
 end
 
+# Injeta o widget do AstraCalls (botão de telefone na conversa) via DASHBOARD_SCRIPTS.
+# O widget é servido pelo servidor AstraCalls, não pelo Chatwoot:
+#   <script src="https://SEU-ASTRACALLS/widget.js" data-api-key="WACALLS_WIDGET_KEY"></script>
+# DASHBOARD_SCRIPTS é uma InstallationConfig "locked" e o App Config > internal
+# só aparece em plano enterprise — então gravamos direto no model.
+# Configure nas variáveis do serviço:
+#   ASTRACALLS_WIDGET_SRC=https://call.toky.top/widget.js
+#   ASTRACALLS_WIDGET_KEY=<WACALLS_WIDGET_KEY>
+begin
+  puts "🧩 Configurando DASHBOARD_SCRIPTS (widget AstraCalls)..."
+
+  widget_src = ENV['ASTRACALLS_WIDGET_SRC']
+  widget_key = ENV['ASTRACALLS_WIDGET_KEY']
+
+  if widget_src.present? && widget_key.present?
+    script = %(<script src="#{widget_src}" data-api-key="#{widget_key}"></script>)
+
+    config = InstallationConfig.where(name: 'DASHBOARD_SCRIPTS').first_or_initialize
+    config.value = script
+    config.locked = false
+    config.save!
+
+    GlobalConfig.clear_cache
+    puts "   • Widget AstraCalls injetado no dashboard (#{widget_src})"
+    puts "✅ DASHBOARD_SCRIPTS aplicado"
+  else
+    puts "ℹ️  Defina ASTRACALLS_WIDGET_SRC e ASTRACALLS_WIDGET_KEY — DASHBOARD_SCRIPTS não alterado"
+  end
+  puts ""
+
+rescue => e
+  puts "⚠️  Erro ao configurar DASHBOARD_SCRIPTS: #{e.message}"
+  puts ""
+end
+
 # Verifica configurações finais
 begin
   puts "🔍 Verificando configurações aplicadas:"
