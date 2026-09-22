@@ -35,14 +35,28 @@ ask() { # ask VAR "pergunta" "default"
 }
 
 ask_choice() { # ask_choice VAR "pergunta" "a|b|c" "default"
-  local __var="$1" __q="$2" __opts="$3" __def="${4:-}" __ans="" __o
+  local __var="$1" __q="$2" __opts="$3" __def="${4:-}" __ans="" __o __i=0 __defnum=""
+  local __words="${__opts//|/ }"
+  echo "  Opções:"
+  for __o in $__words; do
+    __i=$((__i + 1))
+    printf '    %s) %s\n' "$__i" "$__o"
+    if [ "$__o" = "$__def" ]; then __defnum="$__i"; fi
+  done
   while :; do
-    read -r -p "$__q ($__opts) [$__def]: " __ans || true
-    __ans="${__ans:-$__def}"
-    for __o in ${__opts//|/ }; do
+    read -r -p "$__q [${__defnum:-$__def}]: " __ans || true
+    __ans="${__ans:-${__defnum:-$__def}}"
+    if [ "$__ans" -eq "$__ans" ] 2>/dev/null; then
+      __i=0
+      for __o in $__words; do
+        __i=$((__i + 1))
+        if [ "$__ans" = "$__i" ]; then printf -v "$__var" '%s' "$__o"; return 0; fi
+      done
+    fi
+    for __o in $__words; do
       if [ "$__ans" = "$__o" ]; then printf -v "$__var" '%s' "$__ans"; return 0; fi
     done
-    warn "Opção inválida: '$__ans'. Escolha uma de: $__opts"
+    warn "Opção inválida: '$__ans'. Digite o número ou o nome."
   done
 }
 
@@ -95,16 +109,29 @@ title "2) Código-fonte (Dockerfile.bake + patches/)"
 REPO_URL_DEFAULT="https://github.com/Eduardo-gato/astrachat.git"
 REPO_REF_DEFAULT="main"
 
+dim "O assistente precisa da pasta do projeto (com 'Dockerfile.bake' e 'patches/') para montar a imagem."
+dim ""
+dim "  atual = usa a pasta onde você está rodando agora (deve conter os arquivos do repo)"
+dim "  clone = baixa automaticamente do GitHub (precisa de git + internet)"
+dim ""
+
 if [ -f "./Dockerfile.bake" ] && [ -d "./patches" ]; then
   CTX="$(pwd)"
-  ok "Usando o diretório atual como contexto: $CTX"
-  ask_choice SOURCE "Fonte do código" "atual|clone" "atual"
+  ok "Encontrei Dockerfile.bake e patches/ aqui: $CTX"
+  ask_choice SOURCE "Como quer obter o código?" "atual|clone" "atual"
 else
-  ask_choice SOURCE "Fonte do código" "atual|clone" "clone"
+  warn "Não achei Dockerfile.bake/patches/ na pasta atual: $(pwd)"
+  dim "Dica: rode o assistente dentro de um clone do repo, ou escolha 'clone' abaixo."
+  ask_choice SOURCE "Como quer obter o código?" "atual|clone" "clone"
 fi
 
-if [ "$SOURCE" = "clone" ]; then
+if [ "$SOURCE" = "atual" ]; then
+  CTX="$(pwd)"
+  dim "Usando a pasta atual como contexto: $CTX"
+else
+  dim "Exemplo de URL: https://github.com/Eduardo-gato/astrachat.git"
   ask REPO_URL "URL do repositório" "$REPO_URL_DEFAULT"
+  dim "Exemplo de branch/tag: main  (ou uma tag, ex.: v4.17.1)"
   ask REPO_REF "Branch/tag" "$REPO_REF_DEFAULT"
   BUILD_DIR="${TMPDIR:-/tmp}/astrachat-build"
   info "Clonando $REPO_URL ($REPO_REF) em $BUILD_DIR ..."
@@ -196,11 +223,12 @@ echo
 
 # --- 8. ação ----------------------------------------------------------------
 title "8) O que fazer?"
+dim "  tudo     = build + push + atualizar serviço + verificar"
+dim "  build    = só build + push"
+dim "  update   = só atualizar o serviço com a imagem existente"
+dim "  rollback = reverter o serviço para a revisão anterior"
+dim ""
 ask_choice ACTION "Ação" "tudo|build|update|rollback" "tudo"
-dim "tudo     = build + push + atualizar serviço + verificar"
-dim "build    = só build + push"
-dim "update   = só atualizar o serviço com a imagem existente"
-dim "rollback = reverter o serviço para a revisão anterior"
 echo
 
 # --- 9. unlock (rails runner) -----------------------------------------------
