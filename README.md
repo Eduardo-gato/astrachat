@@ -46,6 +46,14 @@ Dica — crie um atalho e depois digite só `unlock`:
 alias unlock='bash <(curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
 ```
 
+A qualquer momento digite `sair` (ou `exit` / `q`) para encerrar. Ao sair — ou ao
+concluir — o script mostra uma barra de progresso e, se foi baixado para arquivo,
+**se auto-apaga**:
+
+```bash
+wget -qO apply-enterprise.sh https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh && bash apply-enterprise.sh
+```
+
 O assistente pergunta passo a passo (**amd64 / arm64 / both**), monta a imagem com
 `buildx`, dá push, atualiza o serviço e — opcionalmente — roda o `unlock_permanent.rb`
 dentro do container. Também oferece rollback.

@@ -13,6 +13,11 @@
 #
 # Obs: NÃO use "curl -sL URL | bash" — o pipe consome o stdin e as perguntas travam.
 #
+# Para o script se AUTO-APAGAR ao sair (barra de progresso + remoção do arquivo),
+# baixe para arquivo e execute:
+#   wget -qO apply-enterprise.sh https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh && bash apply-enterprise.sh
+# (com "bash <(curl ...)" não há arquivo, então nada é removido)
+#
 set -euo pipefail
 
 C_RESET='\033[0m'; C_BOLD='\033[1m'; C_GREEN='\033[32m'; C_YELLOW='\033[33m'
@@ -27,8 +32,38 @@ title() { printf "\n${C_BOLD}== %s ==${C_RESET}\n" "$*"; }
 die() { err "$*"; exit 1; }
 
 # --- helpers de prompt -------------------------------------------------------
+progress_bar() { # progress_bar "rótulo" [passos]
+  local __label="$1" __steps="${2:-24}" __i __j __bar __pct
+  for ((__i = 0; __i <= __steps; __i++)); do
+    __pct=$(( __i * 100 / __steps ))
+    __bar=""
+    for ((__j = 0; __j < __steps; __j++)); do
+      if [ "$__j" -lt "$__i" ]; then __bar="${__bar}#"; else __bar="${__bar}."; fi
+    done
+    printf "\r${C_CYAN}%s${C_RESET} [%s] %3d%%" "$__label" "$__bar" "$__pct"
+    sleep 0.04 2>/dev/null || sleep 0.1 2>/dev/null || true
+  done
+  printf "\n"
+}
+
+# remove o próprio script, se foi executado a partir de um arquivo
+cleanup_self() {
+  local __self="${BASH_SOURCE[0]:-}"
+  if [ -n "$__self" ] && [ -f "$__self" ]; then
+    case "$(basename "$__self")" in
+      apply-enterprise.sh)
+        rm -f -- "$__self" 2>/dev/null || true
+        dim "Arquivo apply-enterprise.sh removido."
+        ;;
+    esac
+  fi
+}
+
 # A qualquer momento, digitar sair/exit/quit/q encerra o assistente.
 bye() {
+  printf "\n"
+  progress_bar "Encerrando" 24
+  cleanup_self
   printf "\n${C_YELLOW}Saindo do assistente. Até logo!${C_RESET}\n"
   exit 0
 }
@@ -489,3 +524,7 @@ title "Concluído"
 ok "Tudo certo."
 dim "Verifique na UI: Super Admin > Settings (plano) e App Config > internal (Dashboard Scripts)."
 echo
+progress_bar "Finalizando" 24
+cleanup_self
+echo
+ok "Concluído. Até logo!"
