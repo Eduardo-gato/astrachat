@@ -83,11 +83,12 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Comando '$1' não encontrad
 clear 2>/dev/null || true
 printf "${C_BOLD}"
 cat <<'BANNER'
-  ___         _          ___ _         _       _
- / _ \       | |        / __| |_  __ _| |_ ___| |_
-| |_| |_ _ __| |_ __ _  | (__| ' \/ _` |  _/ _ \  _|
- \___/|_| |_|_|\__,_|   \___|_||_\__,_|\__\___/\__|
-         AstraChat — aplicar imagem enterprise (baked)
+              _            _       ____ _           _
+  _   _ _ __ | | ___   ___| | __  / ___| |__   __ _| |_
+ | | | | '_ \| |/ _ \ / __| |/ / | |   | '_ \ / _` | __|
+ | |_| | | | | | (_) | (__|   <  | |___| | | | (_| | |_
+  \__,_|_| |_|_|\___/ \___|_|\_\  \____|_| |_|\__,_|\__|
+           unlock Chat — AstraChat enterprise (baked)
 BANNER
 printf "${C_RESET}\n"
 dim "Este assistente vai: montar a imagem bakeda (multi/single-arch) e atualizar o serviço."
