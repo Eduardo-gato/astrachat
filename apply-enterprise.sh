@@ -60,6 +60,17 @@ ask_choice() { # ask_choice VAR "pergunta" "a|b|c" "default"
   done
 }
 
+ask_secret() { # como ask, mas mostra só os últimos 4 chars do default
+  local __var="$1" __q="$2" __def="${3:-}" __ans=""
+  if [ -n "$__def" ]; then
+    read -r -p "$__q [detectada: ****${__def: -4}]: " __ans || true
+    __ans="${__ans:-$__def}"
+  else
+    read -r -p "$__q: " __ans || true
+  fi
+  printf -v "$__var" '%s' "$__ans"
+}
+
 confirm() { # confirm "pergunta" -> 0 sim / 1 não
   local __ans=""
   read -r -p "$1 [Y/n]: " __ans || true
@@ -81,6 +92,8 @@ BANNER
 printf "${C_RESET}\n"
 dim "Este assistente vai: montar a imagem bakeda (multi/single-arch) e atualizar o serviço."
 dim "Cada passo mostra um default entre [ ]. Aperte ENTER para aceitar."
+echo
+warn "Testado na versão do AstraChat: v4.17.1-0.0.2"
 echo
 
 # --- 1. checagens de ambiente ------------------------------------------------
@@ -277,14 +290,65 @@ fi
 RUN_UNLOCK=0
 WIDGET_SRC=""; WIDGET_KEY=""
 if [ "$ACTION" = "tudo" ] || [ "$ACTION" = "update" ]; then
-  title "9) Rodar também o unlock_permanent.rb (dentro do container)?"
-  dim "Aplica trigger no Postgres, override enterprise, All features, etc."
-  if confirm "Rodar o unlock após atualizar o serviço?"; then
+  title "9) Unlock do Chatwoot (roda DENTRO do container do Chatwoot)"
+  dim "Aqui é a stack do CHATWOOT. O unlock aplica:"
+  dim "  • trigger no PostgreSQL, override enterprise, All features, etc."
+  dim ""
+
+  if confirm "Rodar o unlock_permanent.rb agora?"; then
     RUN_UNLOCK=1
     ask UNLOCK_URL "URL do unlock_permanent.rb" "https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb"
+
+    dim ""
+    dim "--- Widget de chamadas: AstraCalls / WaCalls ---"
+    dim "ATENÇÃO: AstraCalls/WaCalls é uma STACK SEPARADA do Chatwoot"
+    dim "(ex.: serviços 'astracalls_wacalls', 'astracalls_proxy',"
+    dim "'astracalls_postgres-wacalls'), com o environment dela:"
+    dim "    WACALLS_PUBLIC_IP=auto"
+    dim "    WACALLS_UDP_PORT=50000"
+    dim "    WACALLS_MAX_CALLS=8"
+    dim "    WACALLS_API_KEY=troque-esta-chave      # chave-mestra"
+    dim "    WACALLS_PG_NAMESPACE=wacalls"
+    dim "O widget.js é servido por ESSA stack; a chave vem do environment dela"
+    dim "(use WACALLS_WIDGET_KEY, se existir; senão a WACALLS_API_KEY)."
+    dim "Aqui só gravamos o <script> no Chatwoot apontando para essa stack."
+    dim ""
+
+    # a stack AstraCalls tem vários serviços: servidor, proxy (socat/Traefik) e postgres
+    AC_SVCS="$(docker service ls --format '{{.Name}}' 2>/dev/null | grep -iE 'astracall|wacalls' || true)"
+    AC_SERVER="$(printf '%s\n' "$AC_SVCS" | grep -viE 'postgres|proxy|socat' | head -n1 || true)"
+    AC_PROXY="$(printf '%s\n' "$AC_SVCS" | grep -iE 'proxy|socat' | head -n1 || true)"
+    if [ -n "$AC_SVCS" ]; then
+      ok "Stack AstraCalls/WaCalls detectada (stack separada):"
+      printf '%s\n' "$AC_SVCS" | sed 's/^/    - /'
+    else
+      dim "(Não achei serviços 'astracall/wacalls' no Swarm — informe a URL manualmente.)"
+    fi
+
+    # host público pelo label do Traefik no serviço proxy
+    AC_HOST=""
+    if [ -n "$AC_PROXY" ]; then
+      AC_HOST="$(docker service inspect "$AC_PROXY" --format '{{json .Spec.Labels}}' 2>/dev/null | grep -oE 'Host\(`[^`]+`\)' | head -n1 | sed -E 's/Host\(`([^`]+)`\)/\1/' || true)"
+    fi
+
+    # chave do environment do servidor AstraCalls (widget > mestra)
+    AC_KEY=""
+    if [ -n "$AC_SERVER" ]; then
+      AC_KEY="$(docker service inspect "$AC_SERVER" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_WIDGET_KEY=' | head -n1 | cut -d= -f2- || true)"
+      if [ -z "$AC_KEY" ]; then
+        AC_KEY="$(docker service inspect "$AC_SERVER" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_API_KEY=' | head -n1 | cut -d= -f2- || true)"
+      fi
+    fi
+
     if confirm "Injetar o widget do AstraCalls no dashboard (DASHBOARD_SCRIPTS)?"; then
-      ask WIDGET_SRC "ASTRACALLS_WIDGET_SRC" "https://seudominio.com.br/widget.js"
-      ask WIDGET_KEY "ASTRACALLS_WIDGET_KEY (ou a API key)" ""
+      URL_DEF="https://seudominio.com.br/widget.js"
+      if [ -n "$AC_HOST" ]; then
+        URL_DEF="https://${AC_HOST}/widget.js"
+        ok "Host público detectado no Traefik: $AC_HOST"
+      fi
+      ask WIDGET_SRC "URL do widget.js (da stack AstraCalls)" "$URL_DEF"
+      dim "Chave: WACALLS_WIDGET_KEY (recomendada) ou WACALLS_API_KEY (mestra), da stack AstraCalls."
+      ask_secret WIDGET_KEY "Chave do AstraCalls" "$AC_KEY"
     fi
   fi
   echo
