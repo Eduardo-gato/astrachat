@@ -6,6 +6,22 @@ Script para desbloquear funcionalidades enterprise do Chatwoot, removendo limita
 
 ## ⚡ Uso Rápido
 
+### 📦 wget (dentro do container do Chatwoot)
+
+O método mais direto. Execute **dentro do container/app** do Chatwoot (onde o `bundle exec rails` funciona):
+
+```bash
+wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb | bundle exec rails runner -
+```
+
+Se o container não tiver `wget`, use `curl`:
+
+```bash
+curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb | bundle exec rails runner -
+```
+
+Depois **reinicie o container** para o override enterprise entrar em vigor.
+
 ### 🐳 Docker/Portainer (Recomendado)
 
 ```bash
@@ -14,19 +30,22 @@ curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/docker-un
 
 **📖 [Guia Completo Docker/Portainer](DOCKER.md)** - Inclui troubleshooting, métodos alternativos e instruções via Portainer Web UI
 
-### 📦 Instalação Tradicional
+### 🧩 Com o widget de chamadas (AstraCalls)
 
-Execute diretamente no container/servidor do Chatwoot:
+Defina as variáveis **antes** de rodar para injetar o botão de telefone no dashboard (via `DASHBOARD_SCRIPTS`):
 
 ```bash
+export ASTRACALLS_WIDGET_SRC=https://call.toky.top/widget.js
+export ASTRACALLS_WIDGET_KEY=sua_widget_key
 wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb | bundle exec rails runner -
 ```
 
 **Vantagens:**
 - ✅ Configurações **permanentes** que não resetam
 - ✅ Trigger PostgreSQL protege contra alterações
-- ✅ Configurações marcadas como `locked`
-- ✅ Proteção automática contra reversão
+- ✅ Plano `enterprise` forçado por override (prepend) após restart
+- ✅ Todas as "All features" (EE) habilitadas nas contas
+- ✅ Widget do AstraCalls (botão de telefone) no dashboard, via `DASHBOARD_SCRIPTS`
 
 ## 🎯 O que o script faz
 
@@ -42,9 +61,25 @@ wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_p
 - Remove alertas de limitação do Redis
 
 **Atualização de Fallbacks:**
-- Modifica `lib/chatwoot_hub.rb`
+- Modifica `lib/chatwoot_hub.rb` (remove guards e atualiza valores padrão)
 - Cria backup automático do arquivo original
-- Atualiza valores padrão para enterprise
+
+**Override enterprise (prepend):**
+- Sobrescreve `enterprise/lib/enterprise/chatwoot_hub.rb` forçando
+  `pricing_plan = 'enterprise'` e `pricing_plan_quantity = 9_999_999`
+- Passa por cima do wrapper `Kanban::License` que devolve `community`
+- **Só vale após reiniciar o container** (o `prepend` é carregado no boot)
+
+**Habilitação das "All features" (EE):**
+- Liga todos os flags enterprise nas contas (`advanced_assignment`, `audit_logs`,
+  `companies`, `custom_roles`, `saml`, `sla`, `channel_voice`, etc.)
+- Feito via model (`Account#enable_features!`), já que no Super Admin os
+  checkboxes vêm com `disabled="disabled"`
+
+**Widget de chamadas (AstraCalls) — opcional:**
+- Se `ASTRACALLS_WIDGET_SRC` e `ASTRACALLS_WIDGET_KEY` estiverem definidos, grava
+  o `<script>` em `DASHBOARD_SCRIPTS` (`InstallationConfig`) e limpa o cache
+- Adiciona o ícone de telefone nas conversas do dashboard
 
 ## 🔧 Funcionalidades Desbloqueadas
 
@@ -52,8 +87,10 @@ Após executar o script, seu Chatwoot terá:
 
 - 🔓 **Usuários ilimitados** (9.999.999)
 - 🏢 **Funcionalidades enterprise** ativadas
+- ✨ **"All features" (EE) ligadas** nas contas (SLA, SAML, Audit Logs, Companies, Custom Roles, Voice Channel, etc.)
 - 🚫 **Sem alertas** de limitação
 - 💾 **Configurações persistentes**
+- ☎️ **Widget de chamadas** (AstraCalls) no dashboard — opcional
 
 ## 📝 Detalhes Técnicos
 
@@ -63,6 +100,9 @@ Após executar o script, seu Chatwoot terá:
 - Trigger `trg_force_enterprise_configs` (PostgreSQL)
 - Função `force_enterprise_installation_configs()` (PostgreSQL)
 - `lib/chatwoot_hub.rb` (fallbacks)
+- `enterprise/lib/enterprise/chatwoot_hub.rb` (override `pricing_plan`)
+- Feature flags das contas (`Account#feature_*` — "All features")
+- `InstallationConfig` `DASHBOARD_SCRIPTS` (widget AstraCalls, opcional)
 - Cache Redis (limpeza de alertas)
 
 ### Configurações Aplicadas
@@ -100,17 +140,23 @@ curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/docker-un
 
 O script detecta automaticamente o container do Chatwoot e executa o desbloqueio.
 
-### Método 2: Manual via Docker CLI
+### Método 2: wget/curl via Docker CLI
 
 ```bash
 # 1. Encontre o nome do container
 docker ps | grep chatwoot
 
-# 2. Execute o script no container
+# 2. Execute o script no container (wget ou curl)
 docker exec -it <NOME_DO_CONTAINER> bash -c "wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb | bundle exec rails runner -"
 
 # 3. Reinicie o container
 docker restart <NOME_DO_CONTAINER>
+```
+
+Com o widget AstraCalls, passe as variáveis:
+
+```bash
+docker exec -it <NOME_DO_CONTAINER> bash -c "export ASTRACALLS_WIDGET_SRC=https://call.toky.top/widget.js ASTRACALLS_WIDGET_KEY=sua_widget_key && wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb | bundle exec rails runner -"
 ```
 
 ### Método 3: Via Portainer Web UI
@@ -125,25 +171,17 @@ docker restart <NOME_DO_CONTAINER>
    ```
 6. Volte aos containers e clique em **Restart** no container do Chatwoot
 
-### Método 4: SQL Direto no PostgreSQL
+### Método 4: Imagem "baked" (permanente no Docker Swarm)
 
-Se preferir executar SQL diretamente no banco de dados:
+No Swarm o patch em arquivo se perde num reschedule. Para fixar de verdade, faça
+um build da imagem com os patches aplicados (`Dockerfile.bake` + `patches/`) e
+atualize o serviço:
 
 ```bash
-# 1. Conecte ao container do PostgreSQL
-docker exec -it <CONTAINER_POSTGRES> psql -U postgres -d chatwoot_production
-
-# 2. Execute o script SQL
-\i unlock_permanent.sql
+docker build -f Dockerfile.bake -t <SEU_REGISTRY>/astrachat:enterprise .
+docker push <SEU_REGISTRY>/astrachat:enterprise
+docker service update --image <SEU_REGISTRY>/astrachat:enterprise <SERVICO_APP>
 ```
-
-Ou baixe e execute:
-```bash
-wget https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.sql
-docker exec -i <CONTAINER_POSTGRES> psql -U postgres -d chatwoot_production < unlock_permanent.sql
-```
-
-**⚠️ Nota:** Este método só cria o trigger. Você ainda precisa atualizar o `chatwoot_hub.rb` manualmente no container do Chatwoot.
 
 ## 🐳 Compatibilidade
 
@@ -197,9 +235,23 @@ docker exec -i <CONTAINER_POSTGRES> psql -U postgres -d chatwoot_production < un
 
 ## 🔄 Após a Execução
 
-1. Reinicie o container do Chatwoot
+1. **Reinicie o container** do Chatwoot (obrigatório para o override `prepend`)
 2. Acesse a interface web
-3. Verifique se as limitações foram removidas
+3. Verifique o plano e as features:
+
+```bash
+# plano enterprise e limite
+DISABLE_SPRING=1 bundle exec rails runner "puts ChatwootHub.pricing_plan; puts ChatwootHub.pricing_plan_quantity"
+
+# features EE de uma conta
+DISABLE_SPRING=1 bundle exec rails runner "a=Account.find(1); p a.enabled_features.slice('companies','saml','sla','channel_voice','audit_logs')"
+```
+
+Esperado: `enterprise` / `9999999` e as features EE como `true`.
+
+> **Widget AstraCalls:** o ícone de telefone aparece nas conversas do inbox
+> configurado. Ele exige um **microfone** no navegador do agente — sem dispositivo
+> de áudio o widget retorna `Requested device not found`.
 
 ## 🛡️ Como funciona a proteção permanente?
 
