@@ -6,12 +6,12 @@
 # Requisitos: rodar num MANAGER do Swarm com docker + buildx.
 #
 # Uso (baixa E já executa, mantendo o terminal livre para as perguntas):
-#   wget -qO /tmp/apply-enterprise.sh https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh && bash /tmp/apply-enterprise.sh
+#   bash <(curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
 #
-# Ou, em bash (sem arquivo temporário):
-#   bash <(wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
+# Dica: crie um atalho e digite só 'unlock':
+#   alias unlock='bash <(curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
 #
-# Obs: NÃO use "wget -qO- URL | bash" — o pipe consome o stdin e as perguntas travam.
+# Obs: NÃO use "curl -sL URL | bash" — o pipe consome o stdin e as perguntas travam.
 #
 set -euo pipefail
 

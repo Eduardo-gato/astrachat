@@ -37,20 +37,20 @@ Para aplicar a imagem "enterprise" no Swarm de forma guiada (pergunta arquitetur
 Baixa e já executa (mantendo o terminal livre para as perguntas):
 
 ```bash
-wget -qO /tmp/apply-enterprise.sh https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh && bash /tmp/apply-enterprise.sh
+bash <(curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
 ```
 
-Ou, em bash (sem arquivo temporário):
+Dica — crie um atalho e depois digite só `unlock`:
 
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
+alias unlock='bash <(curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
 ```
 
 O assistente pergunta passo a passo (**amd64 / arm64 / both**), monta a imagem com
 `buildx`, dá push, atualiza o serviço e — opcionalmente — roda o `unlock_permanent.rb`
 dentro do container. Também oferece rollback.
 
-> Rode num **manager do Swarm** com `docker` + `buildx`. Não use `wget -qO- URL | bash`:
+> Rode num **manager do Swarm** com `docker` + `buildx`. Não use `curl -sL URL | bash`:
 > o pipe consome o `stdin` e as perguntas travam.
 
 ### 🧩 Com o widget de chamadas (AstraCalls)
