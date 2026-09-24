@@ -25,8 +25,10 @@ ASSIST_URL_R2="https://script.toky.top/apply-enterprise.sh"
 ASSIST_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh"
 UNLOCK_URL_R2="https://script.toky.top/unlock_permanent.rb"
 UNLOCK_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb"
-ASTRACHAT_IMAGE="astraonline/astrachat:v4.17.1-0.0.2"
-ASTRACHAT_IMAGE_URL="https://hub.docker.com/layers/astraonline/astrachat/v4.17.1-0.0.2/images/sha256-0d4e0f8925060d13a0c7380b98508c4d9bf64a80d63c7b766c2d0a8fab1626a4"
+# Imagem baked (multi-arch) — é a que deve rodar. A base astraonline/astrachat
+# só é usada na hora de BUILDAR (não é necessária para rodar).
+ASTRACHAT_IMAGE="edwardbra/astrachat:enterprise"
+ASTRACHAT_IMAGE_URL="https://hub.docker.com/r/edwardbra/astrachat"
 
 C_RESET='\033[0m'; C_BOLD='\033[1m'; C_GREEN='\033[32m'; C_YELLOW='\033[33m'
 C_RED='\033[31m'; C_CYAN='\033[36m'; C_DIM='\033[2m'
@@ -220,7 +222,7 @@ while [ -z "$ASTRACHAT_SERVICES" ]; do
   warn "AstraChat/Chatwoot NÃO está instalado/rodando neste nó."
   dim "O assistente só continua DEPOIS de baixar e subir o AstraChat."
   dim ""
-  dim "Imagem oficial: ${ASTRACHAT_IMAGE}"
+  dim "Imagem baked (multi-arch, atualizada): ${ASTRACHAT_IMAGE}"
   dim "    ${ASTRACHAT_IMAGE_URL}"
   dim ""
 
