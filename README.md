@@ -34,16 +34,16 @@ curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/docker-un
 
 Para aplicar a imagem "enterprise" no Swarm de forma guiada (pergunta arquitetura, imagem, serviço, etc.):
 
-Baixa e já executa (mantendo o terminal livre para as perguntas):
+Baixa e já executa — tenta o **espelho Cloudflare R2** primeiro e cai pro **GitHub** se falhar:
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
+bash <(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
 ```
 
-Dica — crie um atalho e depois digite só `unlock`:
+Dica — atalho pra digitar só `unlock`:
 
 ```bash
-alias unlock='bash <(curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
+alias unlock='bash <(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
 ```
 
 A qualquer momento digite `sair` (ou `exit` / `q`) para encerrar. Ao sair — ou ao
@@ -51,8 +51,11 @@ concluir — o script mostra uma barra de progresso e, se foi baixado para arqui
 **se auto-apaga**:
 
 ```bash
-wget -qO apply-enterprise.sh https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh && bash apply-enterprise.sh
+(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh) -o apply-enterprise.sh && bash apply-enterprise.sh
 ```
+
+> O mesmo fallback (R2 → GitHub) é usado para baixar o `unlock_permanent.rb`
+> dentro do container.
 
 O assistente pergunta passo a passo (**amd64 / arm64 / both**), monta a imagem com
 `buildx`, dá push, atualiza o serviço e — opcionalmente — roda o `unlock_permanent.rb`

@@ -5,20 +5,26 @@
 #
 # Requisitos: rodar num MANAGER do Swarm com docker + buildx.
 #
-# Uso (baixa E já executa, mantendo o terminal livre para as perguntas):
-#   bash <(curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
+# Uso (baixa E já executa). Tenta o espelho (Cloudflare R2) primeiro e cai pro
+# GitHub se falhar:
+#   bash <(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
 #
 # Dica: crie um atalho e digite só 'unlock':
-#   alias unlock='bash <(curl -sL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
+#   alias unlock='bash <(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
 #
-# Obs: NÃO use "curl -sL URL | bash" — o pipe consome o stdin e as perguntas travam.
+# Obs: NÃO use "curl ... | bash" — o pipe consome o stdin e as perguntas travam.
 #
-# Para o script se AUTO-APAGAR ao sair (barra de progresso + remoção do arquivo),
-# baixe para arquivo e execute:
-#   wget -qO apply-enterprise.sh https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh && bash apply-enterprise.sh
+# Para o script se AUTO-APAGAR ao sair, baixe para arquivo:
+#   (curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh) -o apply-enterprise.sh && bash apply-enterprise.sh
 # (com "bash <(curl ...)" não há arquivo, então nada é removido)
 #
 set -euo pipefail
+
+# Endereços do assistente e do unlock (R2 primeiro, GitHub como fallback)
+ASSIST_URL_R2="https://script-unlock.toky.top/apply-enterprise.sh"
+ASSIST_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh"
+UNLOCK_URL_R2="https://script-unlock.toky.top/unlock_permanent.rb"
+UNLOCK_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb"
 
 C_RESET='\033[0m'; C_BOLD='\033[1m'; C_GREEN='\033[32m'; C_YELLOW='\033[33m'
 C_RED='\033[31m'; C_CYAN='\033[36m'; C_DIM='\033[2m'
@@ -373,7 +379,7 @@ if [ "$ACTION" = "tudo" ] || [ "$ACTION" = "update" ]; then
 
   if confirm "Rodar o unlock_permanent.rb agora?"; then
     RUN_UNLOCK=1
-    ask UNLOCK_URL "URL do unlock_permanent.rb" "https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb"
+    dim "Fonte: espelho R2 com fallback pro GitHub."
 
     dim ""
     dim "--- Widget de chamadas: AstraCalls / WaCalls ---"
@@ -493,16 +499,27 @@ do_verify() {
 
 do_unlock() {
   [ "$RUN_UNLOCK" = 1 ] || return 0
-  title "Rodando unlock_permanent.rb"
+  title "Rodando unlock_permanent.rb (dentro do container)"
   local cid
   cid="$(docker ps --filter "name=${SERVICE}." --filter status=running --format '{{.ID}}' 2>/dev/null | head -n1 || true)"
   [ -n "$cid" ] || { warn "Container não encontrado; unlock não executado."; return 0; }
-  docker exec \
-    -e ASTRACALLS_WIDGET_SRC="$WIDGET_SRC" \
-    -e ASTRACALLS_WIDGET_KEY="$WIDGET_KEY" \
-    "$cid" sh -c "wget -qO- '$UNLOCK_URL' | bundle exec rails runner -" \
-    || docker exec -e ASTRACALLS_WIDGET_SRC="$WIDGET_SRC" -e ASTRACALLS_WIDGET_KEY="$WIDGET_KEY" \
-         "$cid" sh -c "curl -sL '$UNLOCK_URL' | bundle exec rails runner -"
+
+  local url ran=0
+  for url in "$UNLOCK_URL_R2" "$UNLOCK_URL_GH"; do
+    info "Fonte: $url"
+    # baixa no container (wget e, se falhar, curl); só executa se baixou
+    if docker exec "$cid" sh -c "wget -qO /tmp/unlock.rb '$url' || curl -fsSL '$url' -o /tmp/unlock.rb"; then
+      docker exec \
+        -e ASTRACALLS_WIDGET_SRC="$WIDGET_SRC" \
+        -e ASTRACALLS_WIDGET_KEY="$WIDGET_KEY" \
+        "$cid" sh -c "bundle exec rails runner /tmp/unlock.rb" \
+        || warn "unlock_permanent.rb retornou erro (veja a saída acima)."
+      ran=1
+      break
+    fi
+    warn "Não baixou de $url — tentando o próximo."
+  done
+  [ "$ran" = 1 ] || warn "Falha ao baixar o unlock_permanent.rb (R2 e GitHub)."
   echo
 }
 
