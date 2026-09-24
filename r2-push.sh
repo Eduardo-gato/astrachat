@@ -17,7 +17,7 @@ set -euo pipefail
 CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-bff7ef9fff44366a3e51710d7d3856e3}"
 R2_BUCKET="${R2_BUCKET:-unlock-chat}"
 R2_FILES="${R2_FILES:-apply-enterprise.sh unlock_permanent.rb README.md}"
-R2_PUBLIC_BASE="${R2_PUBLIC_BASE:-https://script-unlock.toky.top}"
+R2_PUBLIC_BASE="${R2_PUBLIC_BASE:-https://script.toky.top}"
 
 : "${CLOUDFLARE_API_TOKEN:?Defina CLOUDFLARE_API_TOKEN (token com Workers R2 Storage: Edit)}"
 

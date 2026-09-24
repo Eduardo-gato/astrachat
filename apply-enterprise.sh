@@ -7,23 +7,23 @@
 #
 # Uso (baixa E já executa). Tenta o espelho (Cloudflare R2) primeiro e cai pro
 # GitHub se falhar:
-#   bash <(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
+#   bash <(curl -fsSL https://script.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
 #
 # Dica: crie um atalho e digite só 'unlock':
-#   alias unlock='bash <(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
+#   alias unlock='bash <(curl -fsSL https://script.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
 #
 # Obs: NÃO use "curl ... | bash" — o pipe consome o stdin e as perguntas travam.
 #
 # Para o script se AUTO-APAGAR ao sair, baixe para arquivo:
-#   (curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh) -o apply-enterprise.sh && bash apply-enterprise.sh
+#   (curl -fsSL https://script.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh) -o apply-enterprise.sh && bash apply-enterprise.sh
 # (com "bash <(curl ...)" não há arquivo, então nada é removido)
 #
 set -euo pipefail
 
 # Endereços do assistente e do unlock (R2 primeiro, GitHub como fallback)
-ASSIST_URL_R2="https://script-unlock.toky.top/apply-enterprise.sh"
+ASSIST_URL_R2="https://script.toky.top/apply-enterprise.sh"
 ASSIST_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh"
-UNLOCK_URL_R2="https://script-unlock.toky.top/unlock_permanent.rb"
+UNLOCK_URL_R2="https://script.toky.top/unlock_permanent.rb"
 UNLOCK_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb"
 
 C_RESET='\033[0m'; C_BOLD='\033[1m'; C_GREEN='\033[32m'; C_YELLOW='\033[33m'

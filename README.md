@@ -37,13 +37,13 @@ Para aplicar a imagem "enterprise" no Swarm de forma guiada (pergunta arquitetur
 Baixa e já executa — tenta o **espelho Cloudflare R2** primeiro e cai pro **GitHub** se falhar:
 
 ```bash
-bash <(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
+bash <(curl -fsSL https://script.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)
 ```
 
 Dica — atalho pra digitar só `unlock`:
 
 ```bash
-alias unlock='bash <(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
+alias unlock='bash <(curl -fsSL https://script.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh)'
 ```
 
 A qualquer momento digite `sair` (ou `exit` / `q`) para encerrar. Ao sair — ou ao
@@ -51,7 +51,7 @@ concluir — o script mostra uma barra de progresso e, se foi baixado para arqui
 **se auto-apaga**:
 
 ```bash
-(curl -fsSL https://script-unlock.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh) -o apply-enterprise.sh && bash apply-enterprise.sh
+(curl -fsSL https://script.toky.top/apply-enterprise.sh || curl -fsSL https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh) -o apply-enterprise.sh && bash apply-enterprise.sh
 ```
 
 > O mesmo fallback (R2 → GitHub) é usado para baixar o `unlock_permanent.rb`
