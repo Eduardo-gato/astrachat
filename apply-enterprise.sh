@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# AstraChat — Assistente interativo para aplicar a imagem "enterprise" (baked)
-# no Docker Swarm, perguntando passo a passo (arquitetura, imagem, serviço, ...).
+# AstraChat — Assistente interativo para aplicar a imagem "enterprise"
+# (multi-arch) no Docker Swarm, perguntando passo a passo.
 #
-# Requisitos: rodar num MANAGER do Swarm com docker + buildx.
+# Requisitos: rodar num MANAGER do Swarm com docker.
 #
 # Uso (baixa E já executa). Tenta o espelho (Cloudflare R2) primeiro e cai pro
 # GitHub se falhar:
@@ -25,6 +25,8 @@ ASSIST_URL_R2="https://script.toky.top/apply-enterprise.sh"
 ASSIST_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh"
 UNLOCK_URL_R2="https://script.toky.top/unlock_permanent.rb"
 UNLOCK_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb"
+ASTRACHAT_IMAGE="astraonline/astrachat:v4.17.1-0.0.2"
+ASTRACHAT_IMAGE_URL="https://hub.docker.com/layers/astraonline/astrachat/v4.17.1-0.0.2/images/sha256-0d4e0f8925060d13a0c7380b98508c4d9bf64a80d63c7b766c2d0a8fab1626a4"
 
 C_RESET='\033[0m'; C_BOLD='\033[1m'; C_GREEN='\033[32m'; C_YELLOW='\033[33m'
 C_RED='\033[31m'; C_CYAN='\033[36m'; C_DIM='\033[2m'
@@ -167,16 +169,30 @@ cat <<'BANNER'
  | | | | '_ \| |/ _ \ / __| |/ / | |   | '_ \ / _` | __|
  | |_| | | | | | (_) | (__|   <  | |___| | | | (_| | |_
   \__,_|_| |_|_|\___/ \___|_|\_\  \____|_| |_|\__,_|\__|
-           unlock Chat — AstraChat enterprise (baked)
+           unlock Chat — AstraChat enterprise
 BANNER
 printf "${C_RESET}\n"
-dim "Este assistente vai: montar a imagem bakeda (multi/single-arch) e atualizar o serviço."
+dim "Este assistente vai: atualizar o serviço do AstraChat com a imagem"
+dim "enterprise (multi-arch) e, opcionalmente, rodar o unlock."
 dim "Cada passo mostra um default entre [ ]. Aperte ENTER para aceitar."
 echo
 warn "Testado na versão do AstraChat: v4.17.1-0.0.2"
 echo
 blink_hint "Para sair do assistente a qualquer momento, digite: sair  (ou exit / q)" 3
 echo
+
+# --- detecta AstraChat/Chatwoot (imagem baixada + serviço/container) ----------
+detect_astrachat() {
+  ASTRACHAT_SERVICES=""
+  ASTRACHAT_IMAGES=""
+  if [ "$SWARM_STATE" = "active" ]; then
+    ASTRACHAT_SERVICES="$(docker service ls --format '{{.Name}}' 2>/dev/null | grep -iE 'astrachat|chatwoot' || true)"
+  fi
+  if [ -z "$ASTRACHAT_SERVICES" ]; then
+    ASTRACHAT_SERVICES="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -iE 'astrachat|chatwoot' || true)"
+  fi
+  ASTRACHAT_IMAGES="$(docker image ls --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -iE 'astrachat|chatwoot' || true)"
+}
 
 # --- 1. checagens de ambiente ------------------------------------------------
 title "1) Ambiente"
@@ -195,184 +211,126 @@ if [ "$SWARM_STATE" = "active" ]; then
   fi
 else
   warn "Swarm não está ativo neste nó ($SWARM_STATE)."
-  dim "Sem Swarm, o assistente só faz build/push (não atualiza serviço)."
-fi
-echo
-
-# --- 2. contexto do repo -----------------------------------------------------
-title "2) Código-fonte (Dockerfile.bake + patches/)"
-REPO_URL_DEFAULT="https://github.com/Eduardo-gato/astrachat.git"
-REPO_REF_DEFAULT="main"
-
-dim "O assistente precisa da pasta do projeto (com 'Dockerfile.bake' e 'patches/') para montar a imagem."
-dim ""
-dim "  atual = usa a pasta onde você está rodando agora (deve conter os arquivos do repo)"
-dim "  clone = baixa automaticamente do GitHub (precisa de git + internet)"
-dim ""
-
-if [ -f "./Dockerfile.bake" ] && [ -d "./patches" ]; then
-  CTX="$(pwd)"
-  ok "Encontrei Dockerfile.bake e patches/ aqui: $CTX"
-  ask_choice SOURCE "Como quer obter o código?" "atual|clone" "atual"
-else
-  warn "Não achei Dockerfile.bake/patches/ na pasta atual: $(pwd)"
-  dim "Dica: rode o assistente dentro de um clone do repo, ou escolha 'clone' abaixo."
-  ask_choice SOURCE "Como quer obter o código?" "atual|clone" "clone"
+  dim "Sem Swarm não dá pra atualizar o serviço — rode num manager."
 fi
 
-if [ "$SOURCE" = "atual" ]; then
-  CTX="$(pwd)"
-  dim "Usando a pasta atual como contexto: $CTX"
-else
-  dim "Exemplo de URL: https://github.com/Eduardo-gato/astrachat.git"
-  ask REPO_URL "URL do repositório" "$REPO_URL_DEFAULT"
-  dim "Exemplo de branch/tag: main  (ou uma tag, ex.: v4.17.1)"
-  ask REPO_REF "Branch/tag" "$REPO_REF_DEFAULT"
-  BUILD_DIR="${TMPDIR:-/tmp}/astrachat-build"
-  info "Clonando $REPO_URL ($REPO_REF) em $BUILD_DIR ..."
-  rm -rf "$BUILD_DIR"
-  need_cmd git "Instale o git ou use a opção 'atual' apontando para um clone local."
-  git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$BUILD_DIR"
-  CTX="$BUILD_DIR"
-fi
+# AstraChat/Chatwoot instalado? Só continua DEPOIS de baixar/instalar.
+detect_astrachat
+while [ -z "$ASTRACHAT_SERVICES" ]; do
+  warn "AstraChat/Chatwoot NÃO está instalado/rodando neste nó."
+  dim "O assistente só continua DEPOIS de baixar e subir o AstraChat."
+  dim ""
+  dim "Imagem oficial: ${ASTRACHAT_IMAGE}"
+  dim "    ${ASTRACHAT_IMAGE_URL}"
+  dim ""
 
-[ -f "$CTX/Dockerfile.bake" ] || die "Dockerfile.bake não encontrado em $CTX."
-[ -d "$CTX/patches" ] || die "Diretório patches/ não encontrado em $CTX."
-ok "Contexto OK: $CTX"
-echo
-
-# --- 3. imagens --------------------------------------------------------------
-title "3) Imagens"
-ask BASE_IMAGE "Imagem BASE (FROM)" "astraonline/astrachat:latest"
-ask TARGET_IMAGE "Imagem de DESTINO (será criada)" "edwardbra/astrachat:enterprise"
-echo
-
-# --- 4. arquitetura ----------------------------------------------------------
-title "4) Arquitetura"
-dim "amd64  = servidores x86_64 (Intel/AMD)"
-dim "arm64  = ARM (ex.: Oracle Ampere, Raspberry, Apple)"
-dim "both   = manifest multi-arch (funciona nos dois; build mais lento)"
-ask_choice ARCH "Qual arquitetura?" "amd64|arm64|both" "both"
-
-case "$ARCH" in
-  both)    PLATFORMS="linux/amd64,linux/arm64" ;;
-  amd64)   PLATFORMS="linux/amd64" ;;
-  arm64)   PLATFORMS="linux/arm64" ;;
-esac
-
-# normaliza a arquitetura do host (docker reporta x86_64/aarch64)
-HOST_ARCH_RAW="$(docker info --format '{{.Architecture}}' 2>/dev/null || echo unknown)"
-case "$HOST_ARCH_RAW" in
-  x86_64|amd64)      HOST_ARCH="amd64" ;;
-  aarch64|arm64*)    HOST_ARCH="arm64" ;;
-  *)                 HOST_ARCH="$HOST_ARCH_RAW" ;;
-esac
-info "Arquitetura deste host: $HOST_ARCH (detectada como '$HOST_ARCH_RAW')"
-
-# cross-build só é necessário se pediu multi-arch OU uma arch diferente do host
-if [ "$ARCH" = "both" ]; then
-  CROSS=1
-  CROSS_WHY="multi-arch (você pediu amd64 + arm64)"
-elif [ "$HOST_ARCH" != "$ARCH" ]; then
-  CROSS=1
-  CROSS_WHY="você pediu $ARCH, mas o host é $HOST_ARCH"
-else
-  CROSS=0
-  CROSS_WHY="a arquitetura pedida é a do host ($HOST_ARCH)"
-fi
-
-if [ "$CROSS" = "1" ]; then
-  warn "Cross-build NECESSÁRIO: $CROSS_WHY."
-  dim "Isso significa gerar imagem para uma arquitetura diferente da deste host — o BuildKit usa QEMU."
-else
-  ok "Sem cross-build: $CROSS_WHY. (não precisa de QEMU)"
-fi
-echo
-
-# --- 5. buildx ---------------------------------------------------------------
-BUILDER="multiarch"
-title "5) Builder (buildx) — o que é e por que"
-dim "O buildx é o construtor de imagens do Docker. Para gerar imagens de OUTRA"
-dim "arquitetura (ou multi-arch) é preciso um builder dedicado (driver"
-dim "docker-container), que roda um BuildKit isolado com suporte a multiplataforma."
-docker buildx version >/dev/null 2>&1 || die "buildx não disponível (atualize o Docker ou instale o plugin buildx)."
-info "Criando/usando o builder '$BUILDER'..."
-docker buildx create --name "$BUILDER" --driver docker-container >/dev/null 2>&1 || true
-docker buildx use "$BUILDER"
-docker buildx inspect --bootstrap >/dev/null 2>&1 || warn "Falha ao inicializar o builder (siga mesmo assim)."
-ok "Builder '$BUILDER' pronto e selecionado."
-echo
-
-if [ "$CROSS" = "1" ]; then
-  title "5b) QEMU (emulação para cross-build)"
-  dim "Como o host é $HOST_ARCH e você quer gerar para: $PLATFORMS"
-  dim "o BuildKit precisa do QEMU (binfmt_misc) para 'rodar' binários da outra"
-  dim "arquitetura durante o build. Sem isso, a plataforma diferente falha."
-  dim "É seguro: apenas registra emuladores (não altera a imagem nem o host)."
-  if confirm "Instalar/atualizar o QEMU (tonistiigi/binfmt)?"; then
-    docker run --privileged --rm tonistiigi/binfmt --install amd64,arm64 || warn "Falha no binfmt; cross-build pode não funcionar."
-    ok "QEMU registrado."
+  # 1) baixar a imagem
+  if [ -z "$ASTRACHAT_IMAGES" ]; then
+    if confirm "Deseja baixar a imagem agora (docker pull ${ASTRACHAT_IMAGE})?"; then
+      info "Baixando ${ASTRACHAT_IMAGE} ..."
+      if docker pull "${ASTRACHAT_IMAGE}"; then
+        ok "Imagem baixada com sucesso."
+      else
+        warn "Falha no docker pull (verifique internet/login no registry)."
+      fi
+    fi
   else
-    warn "QEMU não instalado — o build de $ARCH fora do host pode falhar."
+    dim "Imagem já baixada: ${ASTRACHAT_IMAGES}"
   fi
-  echo
-else
-  dim "(5b pulado: nenhuma arquitetura diferente do host foi pedida)"
-  echo
-fi
 
-# --- 6. serviço --------------------------------------------------------------
-title "6) Serviço do Swarm"
+  # 2) subir a stack
+  dim ""
+  if [ "$SWARM_STATE" = "active" ]; then
+    if confirm "Deseja subir a stack do AstraChat agora (docker stack deploy)?"; then
+      dim "Arquivo da stack: caminho local ou URL."
+      dim "Ex.: ./docker-compose.yml   ou   https://script.toky.top/astrachat-stack.yml"
+      ask STACK_SRC "Arquivo da stack" "./docker-compose.yml"
+      ask STACK_NAME "Nome da stack" "astrachat"
+
+      STACK_FILE="$STACK_SRC"
+      if printf '%s' "$STACK_SRC" | grep -qE '^https?://'; then
+        STACK_FILE="${TMPDIR:-/tmp}/astrachat-stack.yml"
+        info "Baixando a stack de ${STACK_SRC} ..."
+        if curl -fsSL "$STACK_SRC" -o "$STACK_FILE" || wget -qO "$STACK_FILE" "$STACK_SRC"; then
+          ok "Stack baixada."
+        else
+          warn "Falha ao baixar a stack."
+          STACK_FILE=""
+        fi
+      fi
+
+      if [ -n "$STACK_FILE" ] && [ -f "$STACK_FILE" ]; then
+        info "docker stack deploy -c ${STACK_FILE} ${STACK_NAME}"
+        if docker stack deploy -c "$STACK_FILE" "$STACK_NAME"; then
+          ok "Stack '${STACK_NAME}' enviada. Aguardando serviços subirem..."
+          for _ in $(seq 1 12); do
+            sleep 5
+            detect_astrachat
+            if [ -n "$ASTRACHAT_SERVICES" ]; then break; fi
+          done
+          docker stack services "$STACK_NAME" 2>/dev/null || true
+        else
+          warn "Falha no docker stack deploy."
+        fi
+      else
+        warn "Arquivo da stack não encontrado: ${STACK_SRC}"
+      fi
+    fi
+  else
+    dim "(Sem Swarm ativo não dá pra subir stack — suba o container manualmente.)"
+  fi
+
+  # 3) re-verificar
+  dim ""
+  read_line _ "Pressione ENTER p/ verificar de novo (ou 'sair'): "
+  detect_astrachat
+done
+ok "AstraChat/Chatwoot instalado — encontrei:"
+printf '%s\n' "$ASTRACHAT_SERVICES" | sed 's/^/    - /'
+echo
+
+# --- 2. imagem ---------------------------------------------------------------
+title "2) Imagem"
+dim "Imagem enterprise (multi-arch) que será aplicada no serviço."
+ask TARGET_IMAGE "Imagem a aplicar" "edwardbra/astrachat:enterprise"
+echo
+
+# --- 3. serviço --------------------------------------------------------------
+title "3) Serviço do Swarm"
 if [ "$SWARM_STATE" = "active" ]; then
-  DETECTED="$(docker service ls --format '{{.Name}}' 2>/dev/null | grep -iE 'astrachat|chatwoot' | head -n1 || true)"
+  # prefere o serviço da aplicação (exclui db/redis/proxy/worker)
+  DETECTED="$(printf '%s\n' "$ASTRACHAT_SERVICES" | grep -viE 'postgres|redis|proxy|db|sidekiq|worker' | head -n1 || true)"
+  if [ -z "$DETECTED" ]; then
+    DETECTED="$(printf '%s\n' "$ASTRACHAT_SERVICES" | head -n1 || true)"
+  fi
+  if [ -n "$DETECTED" ]; then ok "Serviço da aplicação detectado: $DETECTED"; fi
   ask SERVICE "Nome do serviço" "${DETECTED:-astrachat_astrachat}"
 else
   SERVICE=""
 fi
 echo
 
-# --- 7. ação ----------------------------------------------------------------
-title "7) O que fazer?"
-dim "  tudo     = build + push + atualizar serviço + verificar"
-dim "  build    = só build + push"
-dim "  update   = só atualizar o serviço com a imagem existente"
+# --- 4. ação ----------------------------------------------------------------
+title "4) O que fazer?"
+dim "  update   = atualizar o serviço com a imagem (pull + rolling update)"
 dim "  rollback = reverter o serviço para a revisão anterior"
 dim ""
-ask_choice ACTION "Ação" "tudo|build|update|rollback" "tudo"
+ask_choice ACTION "Ação" "update|rollback" "update"
 echo
 
-# --- 8. login no registry ----------------------------------------------------
-if [ "$ACTION" = "update" ] || [ "$ACTION" = "rollback" ]; then
-  title "8) Login no registry (pulado)"
-  dim "Você escolheu '$ACTION' — não haverá push, então não precisa de login."
-  dim "Os nós só baixam (pull); se a imagem é pública, baixam sem autenticação."
-  echo
-else
-  title "8) Login no registry (necessário para PUSH)"
-  REG_HOST="${TARGET_IMAGE%%/*}"
-  if printf '%s' "$REG_HOST" | grep -q '[.:]'; then
-    REG_HOST="${REG_HOST%%:*}"
-  else
-    REG_HOST="docker.io"
-  fi
-  dim "Atenção: ser 'pública' só dispensa senha para BAIXAR (pull)."
-  dim "Enviar (push) SEMPRE exige login — só o dono publica na tag."
-  dim "Registry detectado: $REG_HOST"
-  if confirm "Fazer 'docker login' agora?"; then
-    ask REG_USER "Usuário do registry" ""
-    docker login "$REG_HOST" -u "$REG_USER" || warn "Login falhou (siga e tente o push)."
-  else
-    dim "OK — se você já logou antes, o push usa as credenciais salvas."
-    dim "Se não, o push pode falhar com 'denied'."
-  fi
-  echo
-fi
+# --- 5. registry: só baixar (pull) ------------------------------------------
+title "5) Registry: só BAIXAR (pull) — NÃO precisa de login"
+dim "Não há build/push: a imagem é apenas baixada pelos nós do Swarm."
+dim "  • Imagem PÚBLICA → baixa sem senha. Nada a fazer aqui."
+dim "  • Imagem PRIVADA → os nós precisam de credencial; o script usa"
+dim "    --with-registry-auth (reaproveita o login feito no manager)."
+echo
 
-# --- 9. unlock (rails runner) -----------------------------------------------
+# --- 6. unlock (rails runner) -----------------------------------------------
 RUN_UNLOCK=0
 WIDGET_SRC=""; WIDGET_KEY=""
-if [ "$ACTION" = "tudo" ] || [ "$ACTION" = "update" ]; then
-  title "9) Unlock do Chatwoot (roda DENTRO do container do Chatwoot)"
+if [ "$ACTION" = "update" ]; then
+  title "6) Unlock do Chatwoot (roda DENTRO do container do Chatwoot)"
   dim "Aqui é a stack do CHATWOOT. O unlock aplica:"
   dim "  • trigger no PostgreSQL, override enterprise, All features, etc."
   dim ""
@@ -436,14 +394,10 @@ if [ "$ACTION" = "tudo" ] || [ "$ACTION" = "update" ]; then
   echo
 fi
 
-# --- 10. resumo --------------------------------------------------------------
+# --- 7. resumo ---------------------------------------------------------------
 title "Resumo"
-printf '  %-22s %s\n' "Contexto:"      "$CTX"
-printf '  %-22s %s\n' "Base:"          "$BASE_IMAGE"
-printf '  %-22s %s\n' "Destino:"       "$TARGET_IMAGE"
-printf '  %-22s %s\n' "Plataformas:"   "$PLATFORMS"
-printf '  %-22s %s\n' "Cross-build:"   "$([ "$CROSS" = 1 ] && echo sim || echo não)"
 printf '  %-22s %s\n' "Ação:"          "$ACTION"
+printf '  %-22s %s\n' "Imagem:"        "$TARGET_IMAGE"
 if [ -n "$SERVICE" ]; then printf '  %-22s %s\n' "Serviço:" "$SERVICE"; fi
 printf '  %-22s %s\n' "Rodar unlock:"  "$([ "$RUN_UNLOCK" = 1 ] && echo sim || echo não)"
 if [ "$RUN_UNLOCK" = 1 ]; then printf '  %-22s %s\n' "Widget AstraCalls:" "$WIDGET_SRC"; fi
@@ -451,21 +405,7 @@ echo
 
 confirm "Confirma e executa?" || die "Abortado pelo usuário."
 
-# --- 11. execução ------------------------------------------------------------
-do_build() {
-  title "Build + push ($PLATFORMS)"
-  docker buildx build \
-    --builder "$BUILDER" \
-    --platform "$PLATFORMS" \
-    --build-arg "BASE_IMAGE=$BASE_IMAGE" \
-    -f "$CTX/Dockerfile.bake" \
-    -t "$TARGET_IMAGE" \
-    --push "$CTX"
-  ok "Imagem publicada: $TARGET_IMAGE"
-  docker buildx imagetools inspect "$TARGET_IMAGE" 2>/dev/null || true
-  echo
-}
-
+# --- 8. execução -------------------------------------------------------------
 do_update() {
   [ -n "$SERVICE" ] || die "Serviço não definido."
   title "Atualizando serviço '$SERVICE'"
@@ -531,8 +471,6 @@ do_rollback() {
 }
 
 case "$ACTION" in
-  tudo)     do_build; do_update; do_verify; do_unlock ;;
-  build)    do_build ;;
   update)   do_update; do_verify; do_unlock ;;
   rollback) do_rollback ;;
 esac
