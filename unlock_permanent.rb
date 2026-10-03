@@ -7,6 +7,52 @@
 
 require 'fileutils'
 
+# Injeta o widget do AstraCalls (botão de telefone na conversa) via DASHBOARD_SCRIPTS.
+# O widget é servido pelo servidor AstraCalls, não pelo Chatwoot:
+#   <script src="https://SEU-ASTRACALLS/widget.js" data-api-key="WACALLS_WIDGET_KEY"></script>
+# DASHBOARD_SCRIPTS é uma InstallationConfig "locked" e o App Config > internal
+# só aparece em plano enterprise — então gravamos direto no model.
+# Configure nas variáveis do serviço:
+#   ASTRACALLS_WIDGET_SRC=https://seudominio.com.br/widget.js
+#   ASTRACALLS_WIDGET_KEY=<WACALLS_WIDGET_KEY>   (recomendado)
+#   ASTRACALLS_API_KEY=<WACALLS_API_KEY>         (alternativa, chave-mestra)
+def inject_dashboard_widget
+  puts "🧩 Configurando DASHBOARD_SCRIPTS (widget AstraCalls)..."
+
+  widget_src = ENV['ASTRACALLS_WIDGET_SRC']
+  widget_key = ENV['ASTRACALLS_WIDGET_KEY'].presence || ENV['ASTRACALLS_API_KEY']
+
+  if widget_src.present? && widget_key.present?
+    script = %(<script src="#{widget_src}" data-api-key="#{widget_key}"></script>)
+
+    config = InstallationConfig.where(name: 'DASHBOARD_SCRIPTS').first_or_initialize
+    config.value = script
+    config.locked = false
+    config.save!
+
+    GlobalConfig.clear_cache
+    puts "   • Widget AstraCalls injetado no dashboard (#{widget_src})"
+    puts "✅ DASHBOARD_SCRIPTS aplicado"
+  else
+    puts "ℹ️  Defina ASTRACALLS_WIDGET_SRC e ASTRACALLS_WIDGET_KEY (ou ASTRACALLS_API_KEY) — DASHBOARD_SCRIPTS não alterado"
+  end
+  puts ""
+rescue => e
+  puts "⚠️  Erro ao configurar DASHBOARD_SCRIPTS: #{e.message}"
+  puts ""
+end
+
+# Modo "apenas widget": injeta o DASHBOARD_SCRIPTS e encerra SEM aplicar o unlock.
+# Ativado por ASTRACALLS_WIDGET_ONLY=1 (a opção "widget" do apply-enterprise.sh).
+if ENV['ASTRACALLS_WIDGET_ONLY'].to_s =~ /\A(1|true|yes)\z/i
+  puts "🚀 === chatwoot-unlock - Modo APENAS WIDGET (DASHBOARD_SCRIPTS) ==="
+  puts ""
+  inject_dashboard_widget
+  puts "🎉 === Widget aplicado (sem desbloqueio) ==="
+  puts ""
+  exit 0
+end
+
 puts "🚀 === chatwoot-unlock - Desbloqueio PERMANENTE do Chatwoot Enterprise ==="
 puts ""
 
@@ -236,40 +282,7 @@ rescue => e
 end
 
 # Injeta o widget do AstraCalls (botão de telefone na conversa) via DASHBOARD_SCRIPTS.
-# O widget é servido pelo servidor AstraCalls, não pelo Chatwoot:
-#   <script src="https://SEU-ASTRACALLS/widget.js" data-api-key="WACALLS_WIDGET_KEY"></script>
-# DASHBOARD_SCRIPTS é uma InstallationConfig "locked" e o App Config > internal
-# só aparece em plano enterprise — então gravamos direto no model.
-# Configure nas variáveis do serviço:
-#   ASTRACALLS_WIDGET_SRC=https://seudominio.com.br/widget.js
-#   ASTRACALLS_WIDGET_KEY=<WACALLS_WIDGET_KEY>   (recomendado)
-#   ASTRACALLS_API_KEY=<WACALLS_API_KEY>         (alternativa, chave-mestra)
-begin
-  puts "🧩 Configurando DASHBOARD_SCRIPTS (widget AstraCalls)..."
-
-  widget_src = ENV['ASTRACALLS_WIDGET_SRC']
-  widget_key = ENV['ASTRACALLS_WIDGET_KEY'].presence || ENV['ASTRACALLS_API_KEY']
-
-  if widget_src.present? && widget_key.present?
-    script = %(<script src="#{widget_src}" data-api-key="#{widget_key}"></script>)
-
-    config = InstallationConfig.where(name: 'DASHBOARD_SCRIPTS').first_or_initialize
-    config.value = script
-    config.locked = false
-    config.save!
-
-    GlobalConfig.clear_cache
-    puts "   • Widget AstraCalls injetado no dashboard (#{widget_src})"
-    puts "✅ DASHBOARD_SCRIPTS aplicado"
-  else
-    puts "ℹ️  Defina ASTRACALLS_WIDGET_SRC e ASTRACALLS_WIDGET_KEY (ou ASTRACALLS_API_KEY) — DASHBOARD_SCRIPTS não alterado"
-  end
-  puts ""
-
-rescue => e
-  puts "⚠️  Erro ao configurar DASHBOARD_SCRIPTS: #{e.message}"
-  puts ""
-end
+inject_dashboard_widget
 
 # Verifica configurações finais
 begin

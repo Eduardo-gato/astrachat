@@ -315,9 +315,10 @@ echo
 # --- 4. ação ----------------------------------------------------------------
 title "4) O que fazer?"
 dim "  update   = atualizar o serviço com a imagem (pull + rolling update)"
-dim "  rollback = reverter o serviço para a revisão anterior"
-dim ""
-ask_choice ACTION "Ação" "update|rollback" "update"
+dim "  rollback = reverter o serviço para a revisão antiga"
+dim "  unlock   = aplicar desbloqueio do Chatwoot (trigger, configs, features)"
+echo
+ask_choice ACTION "Ação" "update|rollback|unlock" "update"
 echo
 
 # --- 5. registry: só baixar (pull) ------------------------------------------
@@ -331,10 +332,17 @@ echo
 # --- 6. unlock (rails runner) -----------------------------------------------
 RUN_UNLOCK=0
 WIDGET_SRC=""; WIDGET_KEY=""
-if [ "$ACTION" = "update" ]; then
+UNLOCK_TYPE="" # "full" ou "widget"
+if [ "$ACTION" = "update" ] || [ "$ACTION" = "unlock" ]; then
   title "6) Unlock do Chatwoot (roda DENTRO do container do Chatwoot)"
   dim "Aqui é a stack do CHATWOOT. O unlock aplica:"
   dim "  • trigger no PostgreSQL, override enterprise, All features, etc."
+  dim ""
+
+  ask_choice UNLOCK_TYPE "Tipo de unlock" "full|widget" "full"
+  echo
+  dim "  full     = desbloqueio permanente completo (trigger + configs + features)"
+  dim "  widget   = injetar apenas o script do widget no dashboard"
   dim ""
 
   if confirm "Rodar o unlock_permanent.rb agora?"; then
@@ -402,7 +410,12 @@ printf '  %-22s %s\n' "Ação:"          "$ACTION"
 printf '  %-22s %s\n' "Imagem:"        "$TARGET_IMAGE"
 if [ -n "$SERVICE" ]; then printf '  %-22s %s\n' "Serviço:" "$SERVICE"; fi
 printf '  %-22s %s\n' "Rodar unlock:"  "$([ "$RUN_UNLOCK" = 1 ] && echo sim || echo não)"
-if [ "$RUN_UNLOCK" = 1 ]; then printf '  %-22s %s\n' "Widget AstraCalls:" "$WIDGET_SRC"; fi
+if [ "$RUN_UNLOCK" = 1 ]; then
+  printf '  %-22s %s\n' "Tipo unlock:" "$UNLOCK_TYPE"
+  if [ "$UNLOCK_TYPE" = "widget" ]; then
+    printf '  %-22s %s\n' "Widget AstraCalls:" "$WIDGET_SRC"
+  fi
+fi
 echo
 
 confirm "Confirma e executa?" || die "Abortado pelo usuário."
@@ -451,11 +464,25 @@ do_unlock() {
     info "Fonte: $url"
     # baixa no container (wget e, se falhar, curl); só executa se baixou
     if docker exec "$cid" sh -c "wget -qO /tmp/unlock.rb '$url' || curl -fsSL '$url' -o /tmp/unlock.rb"; then
-      docker exec \
-        -e ASTRACALLS_WIDGET_SRC="$WIDGET_SRC" \
-        -e ASTRACALLS_WIDGET_KEY="$WIDGET_KEY" \
-        "$cid" sh -c "bundle exec rails runner /tmp/unlock.rb" \
-        || warn "unlock_permanent.rb retornou erro (veja a saída acima)."
+      case "$UNLOCK_TYPE" in
+        widget)
+          # Apenas injetar widget (DASHBOARD_SCRIPTS)
+          docker exec \
+            -e ASTRACALLS_WIDGET_ONLY=1 \
+            -e ASTRACALLS_WIDGET_SRC="$WIDGET_SRC" \
+            -e ASTRACALLS_WIDGET_KEY="$WIDGET_KEY" \
+            "$cid" sh -c "bundle exec rails runner /tmp/unlock.rb" \
+            || warn "unlock_permanent.rb widget only retornou erro (veja a saída acima)."
+          ;;
+        full)
+          # Desbloqueio permanente completo
+          docker exec \
+            -e ASTRACALLS_WIDGET_SRC="$WIDGET_SRC" \
+            -e ASTRACALLS_WIDGET_KEY="$WIDGET_KEY" \
+            "$cid" sh -c "bundle exec rails runner /tmp/unlock.rb" \
+            || warn "unlock_permanent.rb retornou erro (veja a saída acima)."
+          ;;
+      esac
       ran=1
       break
     fi
@@ -475,6 +502,7 @@ do_rollback() {
 case "$ACTION" in
   update)   do_update; do_verify; do_unlock ;;
   rollback) do_rollback ;;
+  unlock)   do_unlock ;;
 esac
 
 title "Concluído"
