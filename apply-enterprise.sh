@@ -160,6 +160,59 @@ blink_hint() { # blink_hint "texto" [vezes]
   printf "${C_YELLOW}${C_BOLD}%s${C_RESET}\n" "$__msg"
 }
 
+# Pergunta sobre o widget do AstraCalls/WaCalls e preenche WIDGET_SRC/WIDGET_KEY.
+# Retorna 0 se o usuário confirmar, 1 caso contrário.
+ask_widget() { # ask_widget "pergunta de confirmação"
+  local _q="$1"
+  dim "--- Widget de chamadas: AstraCalls / WaCalls ---"
+  dim "ATENÇÃO: AstraCalls/WaCalls é uma STACK SEPARADA do Chatwoot"
+  dim "(ex.: serviços 'astracalls_wacalls', 'astracalls_proxy',"
+  dim "'astracalls_postgres-wacalls')."
+  dim "O widget.js é servido por ESSA stack; a chave vem do environment dela"
+  dim "(WACALLS_WIDGET_KEY, se existir; senão WACALLS_API_KEY)."
+  dim "Aqui só gravamos o <script> no Chatwoot apontando para essa stack."
+  dim ""
+
+  # a stack AstraCalls tem vários serviços: servidor, proxy (socat/Traefik) e postgres
+  AC_SVCS="$(docker service ls --format '{{.Name}}' 2>/dev/null | grep -iE 'astracall|wacalls' || true)"
+  AC_SERVER="$(printf '%s\n' "$AC_SVCS" | grep -viE 'postgres|proxy|socat' | head -n1 || true)"
+  AC_PROXY="$(printf '%s\n' "$AC_SVCS" | grep -iE 'proxy|socat' | head -n1 || true)"
+  if [ -n "$AC_SVCS" ]; then
+    ok "Stack AstraCalls/WaCalls detectada (stack separada):"
+    printf '%s\n' "$AC_SVCS" | sed 's/^/    - /'
+  else
+    dim "(Não achei serviços 'astracall/wacalls' no Swarm — informe a URL manualmente.)"
+  fi
+
+  # host público pelo label do Traefik no serviço proxy
+  AC_HOST=""
+  if [ -n "$AC_PROXY" ]; then
+    AC_HOST="$(docker service inspect "$AC_PROXY" --format '{{json .Spec.Labels}}' 2>/dev/null | grep -oE 'Host\(`[^`]+`\)' | head -n1 | sed -E 's/Host\(`([^`]+)`\)/\1/' || true)"
+  fi
+
+  # chave do environment do servidor AstraCalls (widget > mestra)
+  AC_KEY=""
+  if [ -n "$AC_SERVER" ]; then
+    AC_KEY="$(docker service inspect "$AC_SERVER" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_WIDGET_KEY=' | head -n1 | cut -d= -f2- || true)"
+    if [ -z "$AC_KEY" ]; then
+      AC_KEY="$(docker service inspect "$AC_SERVER" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_API_KEY=' | head -n1 | cut -d= -f2- || true)"
+    fi
+  fi
+
+  if confirm "$_q"; then
+    URL_DEF="https://seudominio.com.br/widget.js"
+    if [ -n "$AC_HOST" ]; then
+      URL_DEF="https://${AC_HOST}/widget.js"
+      ok "Host público detectado no Traefik: $AC_HOST"
+    fi
+    ask WIDGET_SRC "URL do widget.js (da stack AstraCalls)" "$URL_DEF"
+    dim "Chave: WACALLS_WIDGET_KEY (recomendada) ou WACALLS_API_KEY (mestra), da stack AstraCalls."
+    ask_secret WIDGET_KEY "Chave do AstraCalls" "$AC_KEY"
+    return 0
+  fi
+  return 1
+}
+
 trap 'printf "\n"; bye' INT
 
 # --- 0. boas-vindas ----------------------------------------------------------
@@ -174,13 +227,28 @@ cat <<'BANNER'
            unlock Chat — AstraChat enterprise
 BANNER
 printf "${C_RESET}\n"
-dim "Este assistente vai: atualizar o serviço do AstraChat com a imagem"
-dim "enterprise (multi-arch) e, opcionalmente, rodar o unlock."
-dim "Cada passo mostra um default entre [ ]. Aperte ENTER para aceitar."
+dim "Este assistente vai: desbloquear o AstraChat (full) ou apenas injetar"
+dim "o widget de chamadas (widget). Cada passo mostra um default entre [ ]."
+dim "Aperte ENTER para aceitar."
 echo
 warn "Testado na versão do AstraChat: v4.17.1-0.0.2"
 echo
 blink_hint "Para sair do assistente a qualquer momento, digite: sair  (ou exit / q)" 3
+echo
+
+# --- 0.1 tipo de desbloqueio (PRIMEIRA interação) ----------------------------
+title "Tipo de desbloqueio"
+dim "  full   = desbloqueio permanente completo (trigger, configs, features)"
+dim "  widget = apenas injetar o widget no dashboard"
+dim "           (assume que o AstraChat JÁ está desbloqueado)"
+echo
+ask_choice UNLOCK_TYPE "Escolha o tipo" "full|widget" "full"
+echo
+if [ "$UNLOCK_TYPE" = "widget" ]; then
+  ok "Modo WIDGET selecionado — o unlock NÃO será aplicado (já desbloqueado)."
+else
+  info "Modo FULL selecionado — desbloqueio permanente completo."
+fi
 echo
 
 # --- detecta AstraChat/Chatwoot (imagem baixada + serviço/container) ----------
@@ -292,10 +360,17 @@ printf '%s\n' "$ASTRACHAT_SERVICES" | sed 's/^/    - /'
 echo
 
 # --- 2. imagem ---------------------------------------------------------------
-title "2) Imagem"
-dim "Imagem enterprise (multi-arch) que será aplicada no serviço."
-ask TARGET_IMAGE "Imagem a aplicar" "edwardbra/astrachat:enterprise"
-echo
+if [ "$UNLOCK_TYPE" = "widget" ]; then
+  title "2) Imagem"
+  dim "Modo widget: assume o AstraChat já desbloqueado — a imagem NÃO será alterada."
+  TARGET_IMAGE="$ASTRACHAT_IMAGE"
+  echo
+else
+  title "2) Imagem"
+  dim "Imagem enterprise (multi-arch) que será aplicada no serviço."
+  ask TARGET_IMAGE "Imagem a aplicar" "edwardbra/astrachat:enterprise"
+  echo
+fi
 
 # --- 3. serviço --------------------------------------------------------------
 title "3) Serviço do Swarm"
@@ -313,92 +388,53 @@ fi
 echo
 
 # --- 4. ação ----------------------------------------------------------------
-title "4) O que fazer?"
-dim "  update   = atualizar o serviço com a imagem (pull + rolling update)"
-dim "  rollback = reverter o serviço para a revisão antiga"
-dim "  unlock   = aplicar desbloqueio do Chatwoot (trigger, configs, features)"
-echo
-ask_choice ACTION "Ação" "update|rollback|unlock" "update"
-echo
+if [ "$UNLOCK_TYPE" = "widget" ]; then
+  ACTION="unlock"
+  title "4) Ação"
+  dim "Modo widget: apenas injetar o widget (sem update/rollback)."
+  echo
+else
+  title "4) O que fazer?"
+  dim "  update   = atualizar o serviço com a imagem (pull + rolling update)"
+  dim "  rollback = reverter o serviço para a revisão antiga"
+  echo
+  ask_choice ACTION "Ação" "update|rollback" "update"
+  echo
+fi
 
 # --- 5. registry: só baixar (pull) ------------------------------------------
-title "5) Registry: só BAIXAR (pull) — NÃO precisa de login"
-dim "Não há build/push: a imagem é apenas baixada pelos nós do Swarm."
-dim "  • Imagem PÚBLICA → baixa sem senha. Nada a fazer aqui."
-dim "  • Imagem PRIVADA → os nós precisam de credencial; o script usa"
-dim "    --with-registry-auth (reaproveita o login feito no manager)."
-echo
+if [ "$UNLOCK_TYPE" != "widget" ]; then
+  title "5) Registry: só BAIXAR (pull) — NÃO precisa de login"
+  dim "Não há build/push: a imagem é apenas baixada pelos nós do Swarm."
+  dim "  • Imagem PÚBLICA → baixa sem senha. Nada a fazer aqui."
+  dim "  • Imagem PRIVADA → os nós precisam de credencial; o script usa"
+  dim "    --with-registry-auth (reaproveita o login feito no manager)."
+  echo
+fi
 
 # --- 6. unlock (rails runner) -----------------------------------------------
 RUN_UNLOCK=0
 WIDGET_SRC=""; WIDGET_KEY=""
-UNLOCK_TYPE="" # "full" ou "widget"
 if [ "$ACTION" = "update" ] || [ "$ACTION" = "unlock" ]; then
-  title "6) Unlock do Chatwoot (roda DENTRO do container do Chatwoot)"
-  dim "Aqui é a stack do CHATWOOT. O unlock aplica:"
-  dim "  • trigger no PostgreSQL, override enterprise, All features, etc."
-  dim ""
-
-  ask_choice UNLOCK_TYPE "Tipo de unlock" "full|widget" "full"
-  echo
-  dim "  full     = desbloqueio permanente completo (trigger + configs + features)"
-  dim "  widget   = injetar apenas o script do widget no dashboard"
-  dim ""
-
-  if confirm "Rodar o unlock_permanent.rb agora?"; then
-    RUN_UNLOCK=1
-    dim "Fonte: espelho R2 com fallback pro GitHub."
-
+  if [ "$UNLOCK_TYPE" = "widget" ]; then
+    title "6) Widget do AstraCalls (DASHBOARD_SCRIPTS)"
+    dim "Modo widget: o AstraChat é considerado JÁ DESBLOQUEADO."
+    dim "Vou apenas gravar o <script> do widget no dashboard."
     dim ""
-    dim "--- Widget de chamadas: AstraCalls / WaCalls ---"
-    dim "ATENÇÃO: AstraCalls/WaCalls é uma STACK SEPARADA do Chatwoot"
-    dim "(ex.: serviços 'astracalls_wacalls', 'astracalls_proxy',"
-    dim "'astracalls_postgres-wacalls'), com o environment dela:"
-    dim "    WACALLS_PUBLIC_IP=auto"
-    dim "    WACALLS_UDP_PORT=50000"
-    dim "    WACALLS_MAX_CALLS=8"
-    dim "    WACALLS_API_KEY=troque-esta-chave      # chave-mestra"
-    dim "    WACALLS_PG_NAMESPACE=wacalls"
-    dim "O widget.js é servido por ESSA stack; a chave vem do environment dela"
-    dim "(use WACALLS_WIDGET_KEY, se existir; senão a WACALLS_API_KEY)."
-    dim "Aqui só gravamos o <script> no Chatwoot apontando para essa stack."
-    dim ""
-
-    # a stack AstraCalls tem vários serviços: servidor, proxy (socat/Traefik) e postgres
-    AC_SVCS="$(docker service ls --format '{{.Name}}' 2>/dev/null | grep -iE 'astracall|wacalls' || true)"
-    AC_SERVER="$(printf '%s\n' "$AC_SVCS" | grep -viE 'postgres|proxy|socat' | head -n1 || true)"
-    AC_PROXY="$(printf '%s\n' "$AC_SVCS" | grep -iE 'proxy|socat' | head -n1 || true)"
-    if [ -n "$AC_SVCS" ]; then
-      ok "Stack AstraCalls/WaCalls detectada (stack separada):"
-      printf '%s\n' "$AC_SVCS" | sed 's/^/    - /'
+    if ask_widget "Injetar o widget do AstraCalls agora?"; then
+      RUN_UNLOCK=1
     else
-      dim "(Não achei serviços 'astracall/wacalls' no Swarm — informe a URL manualmente.)"
+      warn "Nada a fazer — nenhuma alteração será feita."
     fi
-
-    # host público pelo label do Traefik no serviço proxy
-    AC_HOST=""
-    if [ -n "$AC_PROXY" ]; then
-      AC_HOST="$(docker service inspect "$AC_PROXY" --format '{{json .Spec.Labels}}' 2>/dev/null | grep -oE 'Host\(`[^`]+`\)' | head -n1 | sed -E 's/Host\(`([^`]+)`\)/\1/' || true)"
-    fi
-
-    # chave do environment do servidor AstraCalls (widget > mestra)
-    AC_KEY=""
-    if [ -n "$AC_SERVER" ]; then
-      AC_KEY="$(docker service inspect "$AC_SERVER" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_WIDGET_KEY=' | head -n1 | cut -d= -f2- || true)"
-      if [ -z "$AC_KEY" ]; then
-        AC_KEY="$(docker service inspect "$AC_SERVER" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_API_KEY=' | head -n1 | cut -d= -f2- || true)"
-      fi
-    fi
-
-    if confirm "Injetar o widget do AstraCalls no dashboard (DASHBOARD_SCRIPTS)?"; then
-      URL_DEF="https://seudominio.com.br/widget.js"
-      if [ -n "$AC_HOST" ]; then
-        URL_DEF="https://${AC_HOST}/widget.js"
-        ok "Host público detectado no Traefik: $AC_HOST"
-      fi
-      ask WIDGET_SRC "URL do widget.js (da stack AstraCalls)" "$URL_DEF"
-      dim "Chave: WACALLS_WIDGET_KEY (recomendada) ou WACALLS_API_KEY (mestra), da stack AstraCalls."
-      ask_secret WIDGET_KEY "Chave do AstraCalls" "$AC_KEY"
+  else
+    title "6) Unlock do Chatwoot (roda DENTRO do container do Chatwoot)"
+    dim "Desbloqueio permanente completo (trigger, configs, features)."
+    dim ""
+    if confirm "Rodar o unlock_permanent.rb agora?"; then
+      RUN_UNLOCK=1
+      dim "Fonte: espelho R2 com fallback pro GitHub."
+      dim ""
+      ask_widget "Injetar também o widget do AstraCalls no dashboard (DASHBOARD_SCRIPTS)?" || true
     fi
   fi
   echo
@@ -406,15 +442,21 @@ fi
 
 # --- 7. resumo ---------------------------------------------------------------
 title "Resumo"
-printf '  %-22s %s\n' "Ação:"          "$ACTION"
-printf '  %-22s %s\n' "Imagem:"        "$TARGET_IMAGE"
+printf '  %-22s %s\n' "Tipo:" "$UNLOCK_TYPE"
+if [ "$UNLOCK_TYPE" != "widget" ]; then
+  printf '  %-22s %s\n' "Ação:" "$ACTION"
+  printf '  %-22s %s\n' "Imagem:" "$TARGET_IMAGE"
+fi
 if [ -n "$SERVICE" ]; then printf '  %-22s %s\n' "Serviço:" "$SERVICE"; fi
-printf '  %-22s %s\n' "Rodar unlock:"  "$([ "$RUN_UNLOCK" = 1 ] && echo sim || echo não)"
 if [ "$RUN_UNLOCK" = 1 ]; then
-  printf '  %-22s %s\n' "Tipo unlock:" "$UNLOCK_TYPE"
   if [ "$UNLOCK_TYPE" = "widget" ]; then
+    printf '  %-22s %s\n' "Executar:" "widget (só DASHBOARD_SCRIPTS)"
     printf '  %-22s %s\n' "Widget AstraCalls:" "$WIDGET_SRC"
+  else
+    printf '  %-22s %s\n' "Executar:" "unlock completo"
   fi
+else
+  printf '  %-22s %s\n' "Executar:" "nada"
 fi
 echo
 
