@@ -175,8 +175,6 @@ ask_widget() { # ask_widget "pergunta de confirmação"
 
   # a stack AstraCalls tem vários serviços: servidor, proxy (socat/Traefik) e postgres
   AC_SVCS="$(docker service ls --format '{{.Name}}' 2>/dev/null | grep -iE 'astracall|wacalls' || true)"
-  AC_SERVER="$(printf '%s\n' "$AC_SVCS" | grep -viE 'postgres|proxy|socat' | head -n1 || true)"
-  AC_PROXY="$(printf '%s\n' "$AC_SVCS" | grep -iE 'proxy|socat' | head -n1 || true)"
   if [ -n "$AC_SVCS" ]; then
     ok "Stack AstraCalls/WaCalls detectada (stack separada):"
     printf '%s\n' "$AC_SVCS" | sed 's/^/    - /'
@@ -184,30 +182,45 @@ ask_widget() { # ask_widget "pergunta de confirmação"
     dim "(Não achei serviços 'astracall/wacalls' no Swarm — informe a URL manualmente.)"
   fi
 
-  # host público pelo label do Traefik no serviço proxy
+  # host público: procura o label Host(`...`) do Traefik em QUALQUER serviço da stack
   AC_HOST=""
-  if [ -n "$AC_PROXY" ]; then
-    AC_HOST="$(docker service inspect "$AC_PROXY" --format '{{json .Spec.Labels}}' 2>/dev/null | grep -oE 'Host\(`[^`]+`\)' | head -n1 | sed -E 's/Host\(`([^`]+)`\)/\1/' || true)"
-  fi
+  for s in $AC_SVCS; do
+    AC_HOST="$(docker service inspect "$s" --format '{{json .Spec.Labels}}' 2>/dev/null | grep -oE 'Host\(`[^`]+`\)' | head -n1 | sed -E 's/Host\(`([^`]+)`\)/\1/' || true)"
+    if [ -n "$AC_HOST" ]; then break; fi
+  done
 
-  # chave do environment do servidor AstraCalls (widget > mestra)
+  # chave: WACALLS_WIDGET_KEY (preferida) e, se não houver, WACALLS_API_KEY
   AC_KEY=""
-  if [ -n "$AC_SERVER" ]; then
-    AC_KEY="$(docker service inspect "$AC_SERVER" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_WIDGET_KEY=' | head -n1 | cut -d= -f2- || true)"
-    if [ -z "$AC_KEY" ]; then
-      AC_KEY="$(docker service inspect "$AC_SERVER" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_API_KEY=' | head -n1 | cut -d= -f2- || true)"
-    fi
+  for s in $AC_SVCS; do
+    AC_KEY="$(docker service inspect "$s" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_WIDGET_KEY=' | head -n1 | cut -d= -f2- || true)"
+    if [ -n "$AC_KEY" ]; then break; fi
+  done
+  if [ -z "$AC_KEY" ]; then
+    for s in $AC_SVCS; do
+      AC_KEY="$(docker service inspect "$s" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^WACALLS_API_KEY=' | head -n1 | cut -d= -f2- || true)"
+      if [ -n "$AC_KEY" ]; then break; fi
+    done
   fi
 
   if confirm "$_q"; then
-    URL_DEF="https://seudominio.com.br/widget.js"
     if [ -n "$AC_HOST" ]; then
       URL_DEF="https://${AC_HOST}/widget.js"
       ok "Host público detectado no Traefik: $AC_HOST"
+    else
+      URL_DEF=""
+      warn "Não detectei o domínio do AstraCalls — informe a URL completa (ex.: https://call.toky.top/widget.js)."
     fi
     ask WIDGET_SRC "URL do widget.js (da stack AstraCalls)" "$URL_DEF"
+    if [ -z "$WIDGET_SRC" ]; then
+      warn "URL vazia — widget NÃO será injetado."
+      return 1
+    fi
     dim "Chave: WACALLS_WIDGET_KEY (recomendada) ou WACALLS_API_KEY (mestra), da stack AstraCalls."
     ask_secret WIDGET_KEY "Chave do AstraCalls" "$AC_KEY"
+    if [ -z "$WIDGET_KEY" ]; then
+      warn "Chave vazia — widget NÃO será injetado."
+      return 1
+    fi
     return 0
   fi
   return 1
