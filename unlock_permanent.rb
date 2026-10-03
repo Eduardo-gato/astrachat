@@ -22,6 +22,12 @@ def inject_dashboard_widget
   widget_src = ENV['ASTRACALLS_WIDGET_SRC']
   widget_key = ENV['ASTRACALLS_WIDGET_KEY'].presence || ENV['ASTRACALLS_API_KEY']
 
+  # normaliza a URL: garante https:// e o caminho /widget.js
+  if widget_src.present?
+    widget_src = "https://#{widget_src}" unless widget_src.start_with?('http://', 'https://')
+    widget_src = "#{widget_src.chomp('/')}/widget.js" unless widget_src.end_with?('.js')
+  end
+
   if widget_src.present? && widget_key.present?
     script = %(<script src="#{widget_src}" data-api-key="#{widget_key}"></script>)
 

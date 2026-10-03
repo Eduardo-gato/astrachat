@@ -215,6 +215,16 @@ ask_widget() { # ask_widget "pergunta de confirmação"
       warn "URL vazia — widget NÃO será injetado."
       return 1
     fi
+    # normaliza: garante https:// e o caminho /widget.js
+    case "$WIDGET_SRC" in
+      http://*|https://*) : ;;
+      *) WIDGET_SRC="https://${WIDGET_SRC}" ;;
+    esac
+    case "$WIDGET_SRC" in
+      *.js) : ;;
+      *) WIDGET_SRC="${WIDGET_SRC%/}/widget.js" ;;
+    esac
+    ok "URL do widget: $WIDGET_SRC"
     dim "Chave: WACALLS_WIDGET_KEY (recomendada) ou WACALLS_API_KEY (mestra), da stack AstraCalls."
     ask_secret WIDGET_KEY "Chave do AstraCalls" "$AC_KEY"
     if [ -z "$WIDGET_KEY" ]; then
