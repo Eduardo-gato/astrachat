@@ -1,0 +1,6 @@
+*.sh text eol=lf
+*.rb text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

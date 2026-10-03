@@ -3,3 +3,4 @@ meu-astra.txt
 *.backup.*
 *.backup.20*
 .env
+.wrangler/
