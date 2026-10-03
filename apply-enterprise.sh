@@ -237,15 +237,17 @@ blink_hint "Para sair do assistente a qualquer momento, digite: sair  (ou exit /
 echo
 
 # --- 0.1 tipo de desbloqueio (PRIMEIRA interação) ----------------------------
+# full   = unlock permanente completo
+# widget = injeta apenas o widget do AstraCalls (AstraCalls/WaCalls) no dashboard
 title "Tipo de desbloqueio"
 dim "  full   = desbloqueio permanente completo (trigger, configs, features)"
-dim "  widget = apenas injetar o widget no dashboard"
-dim "           (assume que o AstraChat JÁ está desbloqueado)"
+dim "  widget = apenas injetar o widget do AstraCalls (AstraCalls/WaCalls)"
+dim "           no dashboard (assume que o AstraChat JÁ está desbloqueado)"
 echo
 ask_choice UNLOCK_TYPE "Escolha o tipo" "full|widget" "full"
 echo
 if [ "$UNLOCK_TYPE" = "widget" ]; then
-  ok "Modo WIDGET selecionado — o unlock NÃO será aplicado (já desbloqueado)."
+  ok "Modo WIDGET selecionado — injeta só o widget do AstraCalls (AstraChat já desbloqueado)."
 else
   info "Modo FULL selecionado — desbloqueio permanente completo."
 fi
@@ -391,7 +393,7 @@ echo
 if [ "$UNLOCK_TYPE" = "widget" ]; then
   ACTION="unlock"
   title "4) Ação"
-  dim "Modo widget: apenas injetar o widget (sem update/rollback)."
+  dim "Modo widget: apenas injetar o widget do AstraCalls (sem update/rollback)."
   echo
 else
   title "4) O que fazer?"
