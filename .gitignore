@@ -4,3 +4,6 @@ meu-astra.txt
 *.backup.20*
 .env
 .wrangler/
+# dumps gerados pelo apply-enterprise.sh (backup antes da migração)
+astrachat-backup-*.dump
+*.dump
