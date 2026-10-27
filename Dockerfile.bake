@@ -2,11 +2,15 @@
 # Build: docker build -f Dockerfile.bake -t <seu-registry>/astrachat:enterprise .
 # Base: mesma imagem que o serviço usa hoje (Portainer > Services > astrachat_astrachat > Image).
 # Pode ser sobrescrita no build: --build-arg BASE_IMAGE=...
-ARG BASE_IMAGE=astraonline/astrachat:latest
+ARG BASE_IMAGE=astraonline/astrachat:v4.19.1-0.0.1
 FROM ${BASE_IMAGE}
 
 # Override via prepend (tem precedência sobre o wrapper Kanban::License):
-# força pricing_plan=enterprise + quantity=9999999
+# força pricing_plan=enterprise + quantity=9999999.
+# Na 4.19.1 o gate está em config/initializers/force_enterprise_plan.rb (bytecode
+# .yarb): ele define pricing_plan por define_singleton_method e retorna 'community'
+# quando Kanban::License.active? é false. Como Enterprise::ChatwootHub é PREPEND
+# no singleton class, estes métodos vencem o wrapper.
 COPY patches/chatwoot_hub.rb /app/enterprise/lib/enterprise/chatwoot_hub.rb
 # Impede o hub/reconciliador de reverter o plano
 COPY patches/check_new_versions_job.rb /app/enterprise/app/jobs/enterprise/internal/check_new_versions_job.rb
