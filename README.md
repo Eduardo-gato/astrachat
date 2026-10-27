@@ -61,6 +61,17 @@ O assistente **não builda nem faz push** — ele só aplica a imagem pronta:
 escolhe o serviço, faz `docker pull`, atualiza com `--image` e, se quiser, roda o
 `unlock_permanent.rb` dentro do container. Também oferece `rollback`.
 
+Antes de trocar a imagem ele compara a **versão do serviço** com a **versão da
+imagem alvo** (lendo `/app/config/app.yml`). Se forem diferentes — ex.: instalação
+4.17 recebendo a imagem 4.19 — ele:
+
+1. gera um **dump do Postgres** em `./astrachat-backup-<data>.dump`;
+2. roda `db:chatwoot_prepare` com a **imagem nova**, na mesma rede do serviço,
+   **antes** do update (migração cumulativa: 4.17 → 4.19 de uma vez);
+3. no final confere a versão em execução e se há migração pendente.
+
+Sem isso o app sobe com schema antigo e quebra com `PG::UndefinedColumn/TABLE`.
+
 > Rode num **manager do Swarm**. Não use `curl -sL URL | bash`: o pipe consome o
 > `stdin` e as perguntas travam.
 
