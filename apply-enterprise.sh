@@ -747,7 +747,7 @@ do_rollback() {
   warn "O banco NÃO volta de versão no rollback."
   dim "Se a revisão anterior for de uma versão mais antiga do AstraChat, o app pode"
   dim "quebrar por schema mais novo. Nesse caso: suba a versão de novo e rode"
-  dim "'bundle exec rails db:chatwoot_prepare'."
+  dim "bundle exec rails db:chatwoot_prepare."
   echo
   docker service rollback "$SERVICE"
   echo
