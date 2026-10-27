@@ -486,6 +486,9 @@ printf '  %-22s %s\n' "Tipo:" "$UNLOCK_TYPE"
 if [ "$UNLOCK_TYPE" != "widget" ]; then
   printf '  %-22s %s\n' "Ação:" "$ACTION"
   printf '  %-22s %s\n' "Imagem:" "$TARGET_IMAGE"
+  if [ "$ACTION" = "update" ]; then
+    printf '  %-22s %s\n' "Banco:" "backup + migração automática (se a versão mudar)"
+  fi
 fi
 if [ -n "$SERVICE" ]; then printf '  %-22s %s\n' "Serviço:" "$SERVICE"; fi
 if [ "$RUN_UNLOCK" = 1 ]; then
@@ -501,6 +504,160 @@ fi
 echo
 
 confirm "Confirma e executa?" || die "Abortado pelo usuário."
+
+# --- 7.5 banco: versão, backup e migração ------------------------------------
+# Trocar a imagem 4.17 -> 4.19 sem migrar o banco quebra o app (colunas/tabelas
+# novas). Aqui a gente lê a versão dos dois lados, faz dump do Postgres e roda
+# db:chatwoot_prepare com a imagem NOVA antes de trocar o serviço.
+DB_BACKUP_FILE=""
+DB_MIGRATED=0
+CUR_VERSION=""
+IMG_VERSION=""
+
+running_container() { # container em execução do serviço escolhido
+  docker ps --filter "name=${SERVICE}." --filter status=running --format '{{.ID}}' 2>/dev/null | head -n1 || true
+}
+
+yml_version() { # extrai o campo 'version:' do config/app.yml (via stdin)
+  sed -n "s/^[[:space:]]*version:[[:space:]]*['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}[[:space:]]*$/\1/p" | head -n1
+}
+
+image_version() { # image_version <imagem> -> versão lida direto da imagem (sem subir o app)
+  docker run --rm --entrypoint sh "$1" -c 'cat /app/config/app.yml 2>/dev/null' 2>/dev/null | yml_version
+}
+
+container_version() { # container_version <cid> -> versão do container em execução
+  docker exec "$1" sh -c 'cat /app/config/app.yml 2>/dev/null' 2>/dev/null | yml_version
+}
+
+stack_prefix() { printf '%s' "${SERVICE%_*}"; }
+
+db_container() { # acha o container do Postgres da mesma stack
+  local pre; pre="$(stack_prefix)"
+  docker ps --filter status=running --format '{{.Names}}' 2>/dev/null \
+    | grep -E "^${pre}_(db|postgres|postgresql|pgvector)" | head -n1 \
+    || docker ps --filter status=running --format '{{.Names}}' 2>/dev/null | grep -iE '(postgres|pgvector)' | head -n1 \
+    || true
+}
+
+db_backup() { # dump do banco para ./astrachat-backup-<data>.dump
+  local dbc ts out size
+  dbc="$(db_container)"
+  if [ -z "$dbc" ]; then
+    warn "Não encontrei o container do Postgres — backup NÃO foi feito."
+    return 1
+  fi
+  ts="$(date +%Y%m%d_%H%M%S)"
+  out="${PWD}/astrachat-backup-${ts}.dump"
+  info "Gerando dump do banco ($dbc)..."
+  if ! docker exec "$dbc" sh -c 'pg_dump -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -Fc -f /tmp/astra-backup.dump' 2>/dev/null; then
+    warn "pg_dump falhou (banco ocupado?). Nada foi alterado."
+    return 1
+  fi
+  if ! docker cp "${dbc}:/tmp/astra-backup.dump" "$out" >/dev/null 2>&1; then
+    warn "Não consegui copiar o dump para $out."
+    docker exec "$dbc" rm -f /tmp/astra-backup.dump >/dev/null 2>&1 || true
+    return 1
+  fi
+  docker exec "$dbc" rm -f /tmp/astra-backup.dump >/dev/null 2>&1 || true
+  size="$(wc -c <"$out" 2>/dev/null | tr -d ' ')"
+  if [ "${size:-0}" -lt 4096 ] 2>/dev/null; then
+    warn "Dump muito pequeno (${size:-0} bytes) — confira antes de continuar."
+    return 1
+  fi
+  DB_BACKUP_FILE="$out"
+  ok "Backup OK: $out (${size} bytes)"
+  return 0
+}
+
+service_env() { # env do serviço, uma por linha
+  docker service inspect "$SERVICE" --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' 2>/dev/null \
+    | sed '/^[[:space:]]*$/d' || true
+}
+
+stack_network() { # nome da rede overlay do serviço
+  local ids id name
+  ids="$(docker service inspect "$SERVICE" --format '{{range .Spec.TaskTemplate.Networks}}{{println .Target}}{{end}}' 2>/dev/null || true)"
+  for id in $ids; do
+    name="$(docker network ls --format '{{.ID}} {{.Name}}' 2>/dev/null | awk -v i="$id" '$1==i{print $2}' | head -n1)"
+    if [ -n "$name" ]; then printf '%s' "$name"; return 0; fi
+  done
+  return 1
+}
+
+run_migrations() { # db:chatwoot_prepare com a imagem ALVO, sem tocar no serviço
+  local cid net e args=()
+  cid="$(running_container)"
+  if [ -z "$cid" ]; then
+    warn "Sem container em execução — não dá pra migrar agora."
+    return 1
+  fi
+  if ! docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1; then
+    info "Baixando $TARGET_IMAGE no manager (necessário para migrar)..."
+    docker pull "$TARGET_IMAGE" || { warn "Falha no pull da imagem."; return 1; }
+  fi
+  while IFS= read -r e; do
+    [ -n "$e" ] && args+=(-e "$e")
+  done <<< "$(service_env)"
+  if net="$(stack_network)"; then :; else net=""; fi
+  if [ -n "$net" ]; then
+    dim "Rede: $net"
+    docker run --rm --network "$net" "${args[@]}" -e DISABLE_SPRING=1 \
+      --entrypoint sh "$TARGET_IMAGE" -c 'bundle exec rails db:chatwoot_prepare'
+  else
+    dim "Rede: container:$cid (compartilhando a rede do app)"
+    docker run --rm --network "container:$cid" "${args[@]}" -e DISABLE_SPRING=1 \
+      --entrypoint sh "$TARGET_IMAGE" -c 'bundle exec rails db:chatwoot_prepare'
+  fi
+}
+
+do_preflight_db() {
+  local cid
+  cid="$(running_container)"
+  IMG_VERSION="$(image_version "$TARGET_IMAGE")"
+  [ -n "$cid" ] && CUR_VERSION="$(container_version "$cid")"
+
+  title "Banco de dados (versão × migração)"
+  printf '  %-22s %s\n' "Serviço (atual):" "${CUR_VERSION:-desconhecida}"
+  printf '  %-22s %s\n' "Imagem (alvo):" "${IMG_VERSION:-desconhecida}"
+  echo
+
+  if [ -n "$CUR_VERSION" ] && [ -n "$IMG_VERSION" ] && [ "$CUR_VERSION" = "$IMG_VERSION" ]; then
+    ok "Mesma versão — nenhuma migração necessária."
+    echo
+    return 0
+  fi
+
+  warn "Versões diferentes: banco em ${CUR_VERSION:-?} e código indo para ${IMG_VERSION:-?}."
+  dim "Trocar só a imagem deixa o schema para trás (colunas/tabelas que ainda não existem)."
+  dim "Vou fazer, ANTES de trocar o serviço:"
+  dim "  1) dump do Postgres (arquivo no diretório atual)"
+  dim "  2) db:chatwoot_prepare com a imagem nova (migra tudo, de forma cumulativa)"
+  echo
+  if ! confirm "Rodar backup + migração agora?"; then
+    warn "Sem migração o AstraChat pode NÃO funcionar depois do update."
+    confirm "Continuar mesmo assim (por sua conta e risco)?" || die "Abortado: nada foi alterado."
+    echo
+    return 0
+  fi
+
+  if ! db_backup; then
+    confirm "Backup falhou. Continuar SEM backup?" || die "Abortado: nada foi alterado."
+  fi
+  echo
+  if run_migrations; then
+    DB_MIGRATED=1
+    ok "Migração concluída — banco em ${IMG_VERSION:-nova versão}."
+  else
+    warn "A migração FALHOU."
+    if [ -n "$DB_BACKUP_FILE" ]; then
+      dim "Restaurar o backup (se precisar):"
+      dim "  docker exec -i <container-do-db> pg_restore -U <user> -d <banco> --clean --if-exists < $DB_BACKUP_FILE"
+    fi
+    confirm "Continuar com o update mesmo assim?" || die "Abortado: nada foi alterado no serviço."
+  fi
+  echo
+}
 
 # --- 8. execução -------------------------------------------------------------
 do_update() {
@@ -531,6 +688,16 @@ do_verify() {
   if [ -z "$cid" ]; then warn "Container em execução não encontrado; pule a verificação."; return 0; fi
   docker exec "$cid" sh -c 'DISABLE_SPRING=1 bundle exec rails runner "puts ChatwootHub.pricing_plan; puts ChatwootHub.pricing_plan_quantity"' 2>/dev/null \
     | grep -vE 'WARN|INFO|RubyLLM|ip_lookup' || true
+
+  # versão em execução + schema em dia?
+  local v
+  v="$(container_version "$cid")"
+  if docker exec "$cid" sh -c 'DISABLE_SPRING=1 bundle exec rails db:abort_if_pending_migrations' >/dev/null 2>&1; then
+    ok "Versão em execução: ${v:-?} — sem migrações pendentes."
+  else
+    warn "Versão em execução: ${v:-?} — HÁ migrações pendentes!"
+    dim "Rode: docker exec <container> bundle exec rails db:chatwoot_prepare"
+  fi
   echo
 }
 
@@ -577,12 +744,17 @@ do_unlock() {
 do_rollback() {
   [ -n "$SERVICE" ] || die "Serviço não definido."
   title "Rollback do serviço '$SERVICE'"
+  warn "O banco NÃO volta de versão no rollback."
+  dim "Se a revisão anterior for de uma versão mais antiga do AstraChat, o app pode"
+  dim "quebrar por schema mais novo. Nesse caso: suba a versão de novo e rode"
+  dim "'bundle exec rails db:chatwoot_prepare'."
+  echo
   docker service rollback "$SERVICE"
   echo
 }
 
 case "$ACTION" in
-  update)   do_update; do_verify; do_unlock ;;
+  update)   do_preflight_db; do_update; do_verify; do_unlock ;;
   rollback) do_rollback ;;
   unlock)   do_unlock ;;
 esac
