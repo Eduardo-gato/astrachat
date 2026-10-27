@@ -25,9 +25,12 @@ ASSIST_URL_R2="https://script.toky.top/apply-enterprise.sh"
 ASSIST_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/apply-enterprise.sh"
 UNLOCK_URL_R2="https://script.toky.top/unlock_permanent.rb"
 UNLOCK_URL_GH="https://raw.githubusercontent.com/Eduardo-gato/astrachat/main/unlock_permanent.rb"
-# Imagem baked (multi-arch) — é a que deve rodar. A base astraonline/astrachat
+# Imagens baked (multi-arch) — são as que devem rodar. A base astraonline/astrachat
 # só é usada na hora de BUILDAR (não é necessária para rodar).
+#   :enterprise          = sempre a mais recente (recomendada)
+#   :enterprise-4.19.1   = versão fixa, para pin / rollback
 ASTRACHAT_IMAGE="edwardbra/astrachat:enterprise"
+ASTRACHAT_IMAGE_419="edwardbra/astrachat:enterprise-4.19.1"
 ASTRACHAT_IMAGE_URL="https://hub.docker.com/r/edwardbra/astrachat"
 
 C_RESET='\033[0m'; C_BOLD='\033[1m'; C_GREEN='\033[32m'; C_YELLOW='\033[33m'
@@ -254,7 +257,7 @@ dim "Este assistente vai: desbloquear o AstraChat (full) ou apenas injetar"
 dim "o widget de chamadas (widget). Cada passo mostra um default entre [ ]."
 dim "Aperte ENTER para aceitar."
 echo
-warn "Testado na versão do AstraChat: v4.17.1-0.0.2"
+warn "Testado nas versões do AstraChat: v4.17.1-0.0.2 e v4.19.1-0.0.1"
 echo
 blink_hint "Para sair do assistente a qualquer momento, digite: sair  (ou exit / q)" 3
 echo
@@ -315,7 +318,9 @@ while [ -z "$ASTRACHAT_SERVICES" ]; do
   warn "AstraChat/Chatwoot NÃO está instalado/rodando neste nó."
   dim "O assistente só continua DEPOIS de baixar e subir o AstraChat."
   dim ""
-  dim "Imagem baked (multi-arch, atualizada): ${ASTRACHAT_IMAGE}"
+  dim "Imagens baked (multi-arch, prontas para usar):"
+  dim "  1) ${ASTRACHAT_IMAGE}          = mais recente (recomendada)"
+  dim "  2) ${ASTRACHAT_IMAGE_419}      = versão fixa 4.19.1 (pin / rollback)"
   dim "    ${ASTRACHAT_IMAGE_URL}"
   dim ""
 
@@ -392,8 +397,18 @@ if [ "$UNLOCK_TYPE" = "widget" ]; then
   echo
 else
   title "2) Imagem"
-  dim "Imagem enterprise (multi-arch) que será aplicada no serviço."
-  ask TARGET_IMAGE "Imagem a aplicar" "edwardbra/astrachat:enterprise"
+  dim "Imagens oficiais no Docker Hub (multi-arch: linux/amd64 + linux/arm64):"
+  dim "  1) ${ASTRACHAT_IMAGE}          = mais recente (recomendada)"
+  dim "  2) ${ASTRACHAT_IMAGE_419}      = versão fixa 4.19.1 (pin / rollback)"
+  dim "Ou digite o nome completo de outra imagem."
+  dim "  ${ASTRACHAT_IMAGE_URL}"
+  echo
+  ask TARGET_IMAGE "Imagem a aplicar (1, 2 ou nome completo)" "1"
+  case "$TARGET_IMAGE" in
+    1|enterprise)     TARGET_IMAGE="$ASTRACHAT_IMAGE" ;;
+    2|4.19.1|enterprise-4.19.1) TARGET_IMAGE="$ASTRACHAT_IMAGE_419" ;;
+  esac
+  ok "Imagem selecionada: ${TARGET_IMAGE}"
   echo
 fi
 
