@@ -7,7 +7,7 @@ module Enterprise::ChatwootHub
     ENTERPRISE_BASE_URL
   end
 
-  # AstraChat bake: força enterprise (bypassa o check que só limita 'premium')
+  # AstraChat: força enterprise (bypassa Kanban::License.active?)
   def pricing_plan
     'enterprise'
   end
