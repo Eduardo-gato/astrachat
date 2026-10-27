@@ -57,12 +57,34 @@ concluir — o script mostra uma barra de progresso e, se foi baixado para arqui
 > O mesmo fallback (R2 → GitHub) é usado para baixar o `unlock_permanent.rb`
 > dentro do container.
 
-O assistente pergunta passo a passo (**amd64 / arm64 / both**), monta a imagem com
-`buildx`, dá push, atualiza o serviço e — opcionalmente — roda o `unlock_permanent.rb`
-dentro do container. Também oferece rollback.
+O assistente **não builda nem faz push** — ele só aplica a imagem pronta:
+escolhe o serviço, faz `docker pull`, atualiza com `--image` e, se quiser, roda o
+`unlock_permanent.rb` dentro do container. Também oferece `rollback`.
 
-> Rode num **manager do Swarm** com `docker` + `buildx`. Não use `curl -sL URL | bash`:
-> o pipe consome o `stdin` e as perguntas travam.
+> Rode num **manager do Swarm**. Não use `curl -sL URL | bash`: o pipe consome o
+> `stdin` e as perguntas travam.
+
+### 🖼️ Imagens prontas (multi-arch)
+
+Não é preciso buildar nada: as imagens já saem com os patches assados
+(`pricing_plan`/`pricing_plan_quantity` + bloqueio do reconciliador) para
+**linux/amd64 e linux/arm64**:
+
+| Tag | Base | Uso |
+|---|---|---|
+| `edwardbra/astrachat:enterprise` | AstraChat 4.19.1 | tag usada pelo assistente (sempre a mais recente) |
+| `edwardbra/astrachat:enterprise-4.19.1` | AstraChat 4.19.1 | versão fixa, para rollback / pin |
+
+Build feito pelo GitHub Actions (`.github/workflows/build-multiarch.yml`) a cada
+mudança em `Dockerfile.bake` ou `patches/**`. Para rebuildar à mão:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -f Dockerfile.bake \
+  -t edwardbra/astrachat:enterprise \
+  -t edwardbra/astrachat:enterprise-4.19.1 \
+  --push .
+```
 
 ### 🧩 Com o widget de chamadas (AstraCalls)
 
