@@ -19,7 +19,9 @@ on:
       - '.github/workflows/build-multiarch.yml'
 
 env:
+  # Tag fixa usada pelo apply-enterprise.sh + tag versionada para rollback
   IMAGE: edwardbra/astrachat:enterprise
+  IMAGE_VERSIONED: edwardbra/astrachat:enterprise-4.19.1
   # Base = mesma versão que o serviço roda (AstraChat 4.19.1)
   BASE_IMAGE: astraonline/astrachat:v4.19.1-0.0.1
 
@@ -49,7 +51,13 @@ jobs:
           file: ./Dockerfile.bake
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.IMAGE }}
+          tags: |
+            ${{ env.IMAGE }}
+            ${{ env.IMAGE_VERSIONED }}
+          labels: |
+            org.opencontainers.image.title=AstraChat enterprise (unlock)
+            org.opencontainers.image.version=4.19.1
+            org.opencontainers.image.base.name=astraonline/astrachat:v4.19.1-0.0.1
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}
           provenance: false
@@ -58,4 +66,5 @@ jobs:
       - name: Resumo
         run: |
           echo "Publicado: $IMAGE (linux/amd64, linux/arm64)"
+          echo "Publicado: $IMAGE_VERSIONED"
           docker buildx imagetools inspect "$IMAGE" || true
